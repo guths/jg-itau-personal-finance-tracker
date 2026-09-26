@@ -42,7 +42,7 @@ export function UpcomingCard({ upcoming: u }: { upcoming: Upcoming }) {
           <>
             {chart.rows.some((r) => (r.total as number) !== 0) && (
               <div className="space-y-3">
-                <SectionTitle total={u.installments_total}>Parcelas nos próximos 12 meses</SectionTitle>
+                <SectionTitle total={u.installments_total}>Parcelas futuras</SectionTitle>
                 <StackedMonthChart series={chart.series} rows={chart.rows} className="h-56" label="Parcelas futuras por mês e cartão" />
               </div>
             )}
