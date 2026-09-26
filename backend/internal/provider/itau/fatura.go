@@ -114,7 +114,11 @@ func parseFaturaLines(header string, body []layout.Line) (*provider.Statement, e
 	if err != nil {
 		return nil, err
 	}
-	return buildFaturaStatement(h, f, nil), nil
+	warnings, err := reconcileFatura(h, f)
+	if err != nil {
+		return nil, err
+	}
+	return buildFaturaStatement(h, f, warnings), nil
 }
 
 func parseFaturaHeader(text string) (faturaHeader, error) {
