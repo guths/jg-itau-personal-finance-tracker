@@ -128,3 +128,102 @@ func TestSetTransactionCategoryScopeKey(t *testing.T) {
 		t.Errorf("income rule: %v", err)
 	}
 }
+
+func TestSetTransactionCategoryScopeKeyResolvesOpenQuestions(t *testing.T) {
+	f := newFixture(t)
+	c := New(f.s, nil)
+	bakery := f.sub("Alimentação", "Padaria e café")
+	done := f.tx("KOMPRAO", 100, false)
+	f.exec(`UPDATE transactions SET category_id = ?, categorized_by = 'llm' WHERE id = ?`, f.sub("Alimentação", "Restaurante"), done)
+	qid, waiting := questionFor(t, f, c, "KOMPRAO", 2)
+
+	if err := c.SetTransactionCategory(context.Background(), done, &bakery, "", "key"); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range waiting {
+		if s := f.state(id); s.CategoryID != bakery || s.By != "rule" {
+			t.Errorf("tx %d = %+v", id, s)
+		}
+	}
+	if q := f.question(qid); q.Status != "answered" {
+		t.Errorf("question = %+v", q)
+	}
+}
+
+func TestSetTransactionCategoryScopeKeyKeepsRuleMode(t *testing.T) {
+	f := newFixture(t)
+	c := New(f.s, nil)
+	therapy, other := f.sub("Saúde", "Terapia"), f.sub("Saúde", "Farmácia")
+	f.exec(`INSERT INTO rules (merchant_key, category_id, mode, source) VALUES ('PIX TRANSF ANA', ?, 'ask', 'user')`, therapy)
+	id := f.tx("PIX TRANSF ANA", 20000, true)
+	f.exec(`UPDATE transactions SET category_id = ?, categorized_by = 'user' WHERE id = ?`, therapy, id)
+	if err := c.SetTransactionCategory(context.Background(), id, &other, "", "key"); err != nil {
+		t.Fatal(err)
+	}
+	if r, _ := f.rule("PIX TRANSF ANA"); r.Mode != "ask" || r.CategoryID != other {
+		t.Errorf("rule = %+v", r)
+	}
+	if _, ok := f.rule("NOVA CHAVE"); ok {
+		t.Fatal("unexpected rule")
+	}
+	fresh := f.tx("NOVA CHAVE", 100, false)
+	f.exec(`UPDATE transactions SET category_id = ?, categorized_by = 'user' WHERE id = ?`, therapy, fresh)
+	if err := c.SetTransactionCategory(context.Background(), fresh, &other, "", "key"); err != nil {
+		t.Fatal(err)
+	}
+	if r, _ := f.rule("NOVA CHAVE"); r.Mode != "always" {
+		t.Errorf("new rule = %+v", r)
+	}
+}
+
+func TestUpdateRuleAlwaysResolvesOpenQuestions(t *testing.T) {
+	f := newFixture(t)
+	c := New(f.s, nil)
+	therapy := f.sub("Saúde", "Terapia")
+	ruleID := f.exec(`INSERT INTO rules (merchant_key, category_id, mode, source) VALUES ('PIX TRANSF ANA', ?, 'ask', 'user')`, therapy)
+	id := f.tx("PIX TRANSF ANA", 20000, true)
+	run(t, c, id)
+	qid := f.state(id).QuestionID
+	ctx := context.Background()
+	if err := c.UpdateRule(ctx, ruleID, RuleUpdate{Alias: ptr("Ana")}); err != nil {
+		t.Fatal(err)
+	}
+	if q := f.question(qid); q.Status != "pending" {
+		t.Errorf("mode ask must keep asking: %+v", q)
+	}
+	if err := c.UpdateRule(ctx, ruleID, RuleUpdate{Mode: ptr("always")}); err != nil {
+		t.Fatal(err)
+	}
+	if s := f.state(id); s.CategoryID != therapy || s.By != "rule" {
+		t.Errorf("tx = %+v", s)
+	}
+	if q := f.question(qid); q.Status != "answered" {
+		t.Errorf("question = %+v", q)
+	}
+}
+
+func TestSetTransactionCategoryScopeOneLeavesOpenQuestion(t *testing.T) {
+	f := newFixture(t)
+	c := New(f.s, nil)
+	casa := f.sub("Compras", "Casa")
+	qid, ids := questionFor(t, f, c, "LOJA", 2)
+	ctx := context.Background()
+	if err := c.SetTransactionCategory(ctx, ids[0], &casa, "", "one"); err != nil {
+		t.Fatal(err)
+	}
+	if s := f.state(ids[0]); s.QuestionID != 0 || s.CategoryID != casa || s.By != "user" {
+		t.Errorf("tx = %+v", s)
+	}
+	if q := f.question(qid); q.Status != "pending" || q.TxCount != 1 {
+		t.Errorf("question with one left = %+v", q)
+	}
+	if err := c.SetTransactionCategory(ctx, ids[1], nil, "ignored", "one"); err != nil {
+		t.Fatal(err)
+	}
+	if s := f.state(ids[1]); s.QuestionID != 0 || s.Kind != "ignored" {
+		t.Errorf("tx = %+v", s)
+	}
+	if q := f.question(qid); q.Status != "answered" || q.TxCount != 0 {
+		t.Errorf("empty question = %+v", q)
+	}
+}

@@ -163,8 +163,14 @@ func (c *Categorizer) Answer(ctx context.Context, questionID int64, a Answer) er
 
 // resolveSiblings applies a remembered answer to the other open questions of the same key.
 func (c *Categorizer) resolveSiblings(ctx context.Context, tx *sql.Tx, q questionRow, d decision) error {
+	return c.resolveOpenQuestions(ctx, tx, q.Key, q.ID, d)
+}
+
+// resolveOpenQuestions applies a rule decision (categorized_by = rule) to the transactions of the
+// key's open questions, except exceptID (0 = none), and marks those questions answered.
+func (c *Categorizer) resolveOpenQuestions(ctx context.Context, tx *sql.Tx, key string, exceptID int64, d decision) error {
 	rows, err := tx.QueryContext(ctx, `SELECT t.id FROM transactions t JOIN questions q ON q.id = t.question_id
-		WHERE q.merchant_key = ? AND q.id <> ? AND q.status IN ('pending', 'skipped')`, q.Key, q.ID)
+		WHERE q.merchant_key = ? AND q.id <> ? AND q.status IN ('pending', 'skipped')`, key, exceptID)
 	if err != nil {
 		return err
 	}
@@ -178,11 +184,14 @@ func (c *Categorizer) resolveSiblings(ctx context.Context, tx *sql.Tx, q questio
 		ids = append(ids, id)
 	}
 	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
 	if err := c.apply(ctx, tx, ids, d, "rule"); err != nil {
 		return err
 	}
 	_, err = tx.ExecContext(ctx, `UPDATE questions SET status = 'answered', answered_at = UTC_TIMESTAMP()
-		WHERE merchant_key = ? AND id <> ? AND status IN ('pending', 'skipped')`, q.Key, q.ID)
+		WHERE merchant_key = ? AND id <> ? AND status IN ('pending', 'skipped')`, key, exceptID)
 	return err
 }
 
