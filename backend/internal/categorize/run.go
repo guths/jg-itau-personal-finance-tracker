@@ -362,23 +362,31 @@ func (c *Categorizer) applyKind(ctx context.Context, db execer, ids []int64, kin
 func (c *Categorizer) createQuestion(ctx context.Context, key string, perTx bool, suggestions []int64, prompt string, txIDs []int64) (int64, error) {
 	var qid int64
 	err := c.inTx(ctx, func(tx *sql.Tx) error {
-		var sugg any
-		if len(suggestions) > 0 {
-			raw, _ := json.Marshal(suggestions)
-			sugg = string(raw)
-		}
-		r, err := tx.ExecContext(ctx, `INSERT INTO questions (merchant_key, per_transaction, suggestions, prompt)
-			VALUES (?, ?, ?, ?)`, key, perTx, sugg, nullString(clip(prompt, 512)))
-		if err != nil {
-			return err
-		}
-		if qid, err = r.LastInsertId(); err != nil {
-			return err
-		}
-		args := append([]any{qid}, int64Args(txIDs)...)
-		_, err = tx.ExecContext(ctx, `UPDATE transactions SET question_id = ? WHERE id IN (`+placeholders(len(txIDs))+`)`, args...)
+		var err error
+		qid, err = insertQuestion(ctx, tx, key, perTx, suggestions, prompt, txIDs)
 		return err
 	})
+	return qid, err
+}
+
+// insertQuestion stores a question and links the transactions to it, inside db's transaction.
+func insertQuestion(ctx context.Context, db execer, key string, perTx bool, suggestions []int64, prompt string, txIDs []int64) (int64, error) {
+	var sugg any
+	if len(suggestions) > 0 {
+		raw, _ := json.Marshal(suggestions)
+		sugg = string(raw)
+	}
+	r, err := db.ExecContext(ctx, `INSERT INTO questions (merchant_key, per_transaction, suggestions, prompt)
+		VALUES (?, ?, ?, ?)`, key, perTx, sugg, nullString(clip(prompt, 512)))
+	if err != nil {
+		return 0, err
+	}
+	qid, err := r.LastInsertId()
+	if err != nil {
+		return 0, err
+	}
+	args := append([]any{qid}, int64Args(txIDs)...)
+	_, err = db.ExecContext(ctx, `UPDATE transactions SET question_id = ? WHERE id IN (`+placeholders(len(txIDs))+`)`, args...)
 	return qid, err
 }
 

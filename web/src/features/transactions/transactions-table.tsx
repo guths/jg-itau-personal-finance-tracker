@@ -13,11 +13,12 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import type { PendingChange } from "@/features/transactions/recategorize-dialog"
+import { isSpendingKind, spendingKindOf } from "@/features/transactions/spending"
 import { formatDateShort } from "@/lib/format"
 import { CATEGORIZED_BY_LABEL, TX_KIND_LABEL } from "@/lib/labels"
 import type { Transaction } from "@/lib/types"
 
-const isSpending = (t: Transaction) => t.kind === "expense" || t.kind === "refund"
+const isSpending = (t: Transaction) => isSpendingKind(t.kind)
 
 function CategoryCell({ t, disabled, onChange }: { t: Transaction; disabled: boolean; onChange: (c: PendingChange) => void }) {
   if (!isSpending(t)) return <Badge variant="outline">{TX_KIND_LABEL[t.kind]}</Badge>
@@ -115,8 +116,8 @@ export function TransactionsTable({ rows, disabled, onChange }: Props) {
                       </DropdownMenuItem>
                     )}
                     {!isSpending(t) && (
-                      <DropdownMenuItem onSelect={() => onChange({ tx: t, type: "kind", kind: "expense" })}>
-                        <UndoIcon /> Gasto (sem categoria)
+                      <DropdownMenuItem onSelect={() => onChange({ tx: t, type: "kind", kind: spendingKindOf(t.amount_cents) })}>
+                        <UndoIcon /> {TX_KIND_LABEL[spendingKindOf(t.amount_cents)]} (sem categoria)
                       </DropdownMenuItem>
                     )}
                   </DropdownMenuContent>

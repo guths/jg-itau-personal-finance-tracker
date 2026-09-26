@@ -3,6 +3,7 @@ package categorize
 import (
 	"context"
 	"errors"
+	"reflect"
 	"testing"
 )
 
@@ -225,5 +226,50 @@ func TestSetTransactionCategoryScopeOneLeavesOpenQuestion(t *testing.T) {
 	}
 	if q := f.question(qid); q.Status != "answered" || q.TxCount != 0 {
 		t.Errorf("empty question = %+v", q)
+	}
+}
+
+// "Gasto (sem categoria)" must derive expense/refund from the sign and put the transaction in
+// the question queue, never leave it without category nor question.
+func TestSetOneBackToSpendingGoesToQuestionQueue(t *testing.T) {
+	f := newFixture(t)
+	c := New(f.s, nil)
+	ctx := context.Background()
+	casa := f.sub("Compras", "Casa")
+	f.exec(`INSERT INTO rules (merchant_key, category_id, mode, source) VALUES ('ESTORNO LOJA', ?, 'always', 'user')`, casa)
+	refund := f.tx("ESTORNO LOJA", -5000, false)
+	f.exec(`UPDATE transactions SET kind = 'ignored', categorized_by = 'user' WHERE id = ?`, refund)
+	if err := c.SetTransactionCategory(ctx, refund, nil, "expense", "one"); err != nil {
+		t.Fatal(err)
+	}
+	s := f.state(refund)
+	if s.Kind != "refund" || s.CategoryID != 0 || s.By != "" || s.QuestionID == 0 {
+		t.Fatalf("refund = %+v", s)
+	}
+	if q := f.question(s.QuestionID); q.Status != "pending" || q.Key != "ESTORNO LOJA" || !reflect.DeepEqual(q.Suggestions, []int64{casa}) {
+		t.Errorf("question = %+v", q)
+	}
+
+	// Joins the key's open question instead of creating another.
+	qid, _ := questionFor(t, f, c, "LOJA", 1)
+	back := f.tx("LOJA", 3000, false)
+	f.exec(`UPDATE transactions SET kind = 'own_transfer', categorized_by = 'user' WHERE id = ?`, back)
+	if err := c.SetTransactionCategory(ctx, back, nil, "refund", "one"); err != nil {
+		t.Fatal(err)
+	}
+	if s := f.state(back); s.Kind != "expense" || s.QuestionID != qid {
+		t.Errorf("back = %+v (question %d)", s, qid)
+	}
+	if n := f.count(`SELECT COUNT(*) FROM transactions WHERE kind IN ('expense', 'refund') AND category_id IS NULL
+		AND categorized_by IS NULL AND question_id IS NULL`); n != 0 {
+		t.Errorf("orphans = %d", n)
+	}
+
+	// With a category, the kind also follows the sign.
+	if err := c.SetTransactionCategory(ctx, refund, &casa, "expense", "one"); err != nil {
+		t.Fatal(err)
+	}
+	if s := f.state(refund); s.Kind != "refund" || s.CategoryID != casa || s.QuestionID != 0 {
+		t.Errorf("categorized refund = %+v", s)
 	}
 }

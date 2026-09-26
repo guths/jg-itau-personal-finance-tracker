@@ -22,8 +22,9 @@ func (c *Categorizer) SetTransactionCategory(ctx context.Context, txID int64, ca
 		return ErrInvalidScope
 	}
 	return c.inTx(ctx, func(tx *sql.Tx) error {
-		var key, curKind string
-		err := tx.QueryRowContext(ctx, `SELECT merchant_key, kind FROM transactions WHERE id = ? FOR UPDATE`, txID).Scan(&key, &curKind)
+		var key string
+		var amount int64
+		err := tx.QueryRowContext(ctx, `SELECT merchant_key, amount_cents FROM transactions WHERE id = ? FOR UPDATE`, txID).Scan(&key, &amount)
 		if errors.Is(err, sql.ErrNoRows) {
 			return ErrNotFound
 		}
@@ -35,7 +36,7 @@ func (c *Categorizer) SetTransactionCategory(ctx context.Context, txID int64, ca
 			return err
 		}
 		if scope == "one" {
-			return c.setOne(ctx, tx, tax, txID, categoryID, kind)
+			return c.setOne(ctx, tx, tax, txID, key, amount, categoryID, kind)
 		}
 		ruleKind := kind
 		if categoryID != nil && (kind == "expense" || kind == "refund") {
@@ -63,8 +64,18 @@ func (c *Categorizer) SetTransactionCategory(ctx context.Context, txID int64, ca
 	})
 }
 
-// setOne changes a single transaction and takes it out of its open question.
-func (c *Categorizer) setOne(ctx context.Context, tx *sql.Tx, tax taxonomy, txID int64, categoryID *int64, kind string) error {
+// spendingKind is expense or refund, by the sign of the amount.
+func spendingKind(amountCents int64) string {
+	if amountCents < 0 {
+		return "refund"
+	}
+	return "expense"
+}
+
+// setOne changes a single transaction and takes it out of its open question. Back to spending
+// without a category ("expense"/"refund" and no category), it goes to the question queue. The
+// sign of the amount decides between expense and refund.
+func (c *Categorizer) setOne(ctx context.Context, tx *sql.Tx, tax taxonomy, txID int64, key string, amount int64, categoryID *int64, kind string) error {
 	if categoryID != nil {
 		if !tax.valid(*categoryID) {
 			return ErrInvalidCategory
@@ -75,7 +86,7 @@ func (c *Categorizer) setOne(ctx context.Context, tx *sql.Tx, tax taxonomy, txID
 			err = c.applyCategory(ctx, tx, []int64{txID}, *categoryID, "user")
 		case "expense", "refund":
 			_, err = tx.ExecContext(ctx, `UPDATE transactions SET category_id = ?, kind = ?, categorized_by = 'user' WHERE id = ?`,
-				*categoryID, kind, txID)
+				*categoryID, spendingKind(amount), txID)
 		default:
 			return ErrInvalidKind
 		}
@@ -87,14 +98,46 @@ func (c *Categorizer) setOne(ctx context.Context, tx *sql.Tx, tax taxonomy, txID
 	if !userKinds[kind] {
 		return ErrInvalidKind
 	}
-	by := any("user")
 	if kind == "expense" || kind == "refund" {
-		by = nil // spending again, but still without a category
+		return c.backToQuestions(ctx, tx, txID, key, spendingKind(amount))
 	}
-	if _, err := tx.ExecContext(ctx, `UPDATE transactions SET kind = ?, category_id = NULL, categorized_by = ? WHERE id = ?`, kind, by, txID); err != nil {
+	if _, err := tx.ExecContext(ctx, `UPDATE transactions SET kind = ?, category_id = NULL, categorized_by = 'user' WHERE id = ?`, kind, txID); err != nil {
 		return err
 	}
 	return detachFromOpenQuestion(ctx, tx, txID)
+}
+
+// backToQuestions makes a transaction spending without category again and puts it in the key's
+// open grouped question, or in a new one suggesting the category of the key's rule.
+func (c *Categorizer) backToQuestions(ctx context.Context, tx *sql.Tx, txID int64, key, kind string) error {
+	if err := detachFromOpenQuestion(ctx, tx, txID); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE transactions SET kind = ?, category_id = NULL, categorized_by = NULL, question_id = NULL
+		WHERE id = ?`, kind, txID); err != nil {
+		return err
+	}
+	var qid int64
+	err := tx.QueryRowContext(ctx, `SELECT MIN(id) FROM questions WHERE merchant_key = ? AND status IN ('pending', 'skipped')
+		AND NOT per_transaction HAVING MIN(id) IS NOT NULL`, key).Scan(&qid)
+	switch {
+	case err == nil:
+		_, err = tx.ExecContext(ctx, `UPDATE transactions SET question_id = ? WHERE id = ?`, qid, txID)
+		return err
+	case !errors.Is(err, sql.ErrNoRows):
+		return err
+	}
+	var sugg []int64
+	var cat sql.NullInt64
+	err = tx.QueryRowContext(ctx, `SELECT category_id FROM rules WHERE merchant_key = ?`, key).Scan(&cat)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return err
+	}
+	if cat.Valid {
+		sugg = []int64{cat.Int64}
+	}
+	_, err = insertQuestion(ctx, tx, key, false, sugg, "", []int64{txID})
+	return err
 }
 
 // detachFromOpenQuestion unlinks a transaction from its pending/skipped question; a question

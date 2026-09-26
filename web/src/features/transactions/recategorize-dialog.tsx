@@ -1,6 +1,7 @@
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Spinner } from "@/components/ui/spinner"
+import { isSpendingKind } from "@/features/transactions/spending"
 import { TX_KIND_LABEL } from "@/lib/labels"
 import type { Transaction, TxKind } from "@/lib/types"
 
@@ -18,8 +19,9 @@ interface Props {
 /** Pergunta o escopo da troca: só este lançamento ou todos da mesma chave (vira regra). */
 export function RecategorizeDialog({ change, busy, onCancel, onApply }: Props) {
   const target = change?.type === "category" ? change.path : change ? TX_KIND_LABEL[change.kind] : ""
-  // Voltar a ser gasto sem categoria não vira regra: só vale para este lançamento.
-  const keyAllowed = change?.type === "category" || (change?.type === "kind" && change.kind !== "expense")
+  // Voltar a ser gasto/estorno sem categoria não vira regra: só vale para este lançamento
+  // (e o lançamento vai para a fila de perguntas).
+  const keyAllowed = change?.type === "category" || (change?.type === "kind" && !isSpendingKind(change.kind))
 
   return (
     <Dialog open={!!change} onOpenChange={(open) => !open && !busy && onCancel()}>
