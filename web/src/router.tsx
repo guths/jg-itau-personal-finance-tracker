@@ -2,12 +2,18 @@ import { createBrowserRouter } from "react-router"
 
 import { AppLayout } from "@/components/layout/app-layout"
 import { RouteError } from "@/components/layout/route-error"
+import { Spinner } from "@/components/ui/spinner"
 import { NotFoundPage } from "@/pages/not-found-page"
 
 // Cada tela vira um chunk próprio (Recharts só carrega no dashboard).
 export const router = createBrowserRouter([
   {
     element: <AppLayout />,
+    hydrateFallbackElement: (
+      <div className="flex min-h-svh items-center justify-center">
+        <Spinner className="size-6 text-muted-foreground" />
+      </div>
+    ),
     children: [
       {
         errorElement: <RouteError />,
