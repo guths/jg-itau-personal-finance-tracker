@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"jgfinance/internal/categorize"
+	"jgfinance/internal/insights"
 	"jgfinance/internal/provider"
 	"jgfinance/internal/store"
 )
@@ -240,5 +241,69 @@ func TestSweepReversalsRespectsCheckedDocuments(t *testing.T) {
 	}
 	if got := f.state(back); got.Kind != "reversed" {
 		t.Errorf("refund = %+v", got)
+	}
+}
+
+func TestImportOverlappingStatementReversesStoredPayment(t *testing.T) {
+	pay := provider.Transaction{Date: d(2026, 9, 2), Description: "PIX QRS DAL SOTO SO02/09", Key: "PIX QRS DAL SOTO SO", AmountCents: 4200, Kind: provider.Expense}
+	dev := provider.Transaction{Date: d(2026, 9, 2), Description: "DEV PIX DAL SOTO SO02/09", Key: "DEV PIX DAL SOTO SO", AmountCents: -4200, Kind: provider.Refund}
+	coffee := provider.Transaction{Date: d(2026, 9, 1), Description: "CAFE", Key: "CAFE", AmountCents: 800, Kind: provider.Expense}
+
+	// Statement A was exported before the refund: the payment is stored and waits in a question.
+	e := newEnv(t, bankStatement(coffee, pay))
+	e.im.categorizer = categorize.New(e.st, nil)
+	if r := importOne(t, e, "extrato-a.pdf", pdf(t, 0)); r.Status != StatusImported || r.NewCount != 2 {
+		t.Fatalf("A = %+v", r)
+	}
+	var payID, qid int64
+	if err := e.st.DB.QueryRow(`SELECT id, COALESCE(question_id, 0) FROM transactions WHERE merchant_key = 'PIX QRS DAL SOTO SO'`).Scan(&payID, &qid); err != nil {
+		t.Fatal(err)
+	}
+	if qid == 0 {
+		t.Fatal("payment should wait in a question after A")
+	}
+
+	// Statement B overlaps A and has the payment again plus its refund.
+	e.prov.st = bankStatement(coffee, pay, dev)
+	if r := importOne(t, e, "extrato-b.pdf", pdf(t, 1)); r.Status != StatusImported || r.NewCount != 1 || r.ExistingCount != 2 {
+		t.Fatalf("B = %+v", r)
+	}
+	rows, err := e.st.DB.Query(`SELECT merchant_key, kind, COALESCE(category_id, 0), COALESCE(categorized_by, ''), COALESCE(question_id, 0)
+		FROM transactions WHERE merchant_key LIKE '%DAL SOTO%'`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := 0
+	for rows.Next() {
+		var key string
+		var st storedTx
+		if err := rows.Scan(&key, &st.Kind, &st.CategoryID, &st.By, &st.QuestionID); err != nil {
+			t.Fatal(err)
+		}
+		n++
+		if st != (storedTx{Kind: "reversed"}) {
+			t.Errorf("%s = %+v, want reversed without category or question", key, st)
+		}
+	}
+	rows.Close()
+	if n != 2 {
+		t.Errorf("DAL SOTO rows = %d, want 2", n)
+	}
+	var status string
+	if err := e.st.DB.QueryRow(`SELECT status FROM questions WHERE id = ?`, qid).Scan(&status); err != nil {
+		t.Fatal(err)
+	}
+	if status != "answered" {
+		t.Errorf("payment question = %s, want answered (no transaction left)", status)
+	}
+	if n := count(t, e.st, `SELECT COUNT(*) FROM questions WHERE status = 'pending' AND merchant_key LIKE '%DAL SOTO%'`); n != 0 {
+		t.Errorf("%d DAL SOTO questions still pending", n)
+	}
+	dash, err := insights.New(e.st).Dashboard(context.Background(), d(2026, 9, 1), d(2026, 9, 26))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dash.Summary.Total != 800 {
+		t.Errorf("september total = %d, want 800 (only the coffee)", dash.Summary.Total)
 	}
 }

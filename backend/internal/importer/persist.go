@@ -136,6 +136,7 @@ func insertTransactions(ctx context.Context, tx *sql.Tx, docID, accountID int64,
 	defer stmt.Close()
 	keys := dedupeKeys(accountID, st)
 	var ids []int64
+	var existingReversed []storedSpending // reversals whose row came from an overlapping statement
 	for i, t := range st.Transactions {
 		r, err := stmt.ExecContext(ctx, docID, accountID, t.Seq, t.Date, referenceMonth(st, t),
 			clip(t.Description, 255), clip(t.Key, 191), t.AmountCents, string(t.Kind), t.PersonTransfer,
@@ -147,8 +148,17 @@ func insertTransactions(ctx context.Context, tx *sql.Tx, docID, accountID int64,
 		}
 		if n, err := r.RowsAffected(); err != nil {
 			return nil, err
-		} else if n == 0 {
-			continue // already imported from an overlapping statement
+		} else if n == 0 { // already imported from an overlapping statement
+			if t.Kind == provider.Reversed {
+				row, found, err := storedSpendingByDedupe(ctx, tx, keys[i])
+				if err != nil {
+					return nil, err
+				}
+				if found {
+					existingReversed = append(existingReversed, row)
+				}
+			}
+			continue
 		}
 		id, err := r.LastInsertId()
 		if err != nil {
@@ -156,7 +166,25 @@ func insertTransactions(ctx context.Context, tx *sql.Tx, docID, accountID int64,
 		}
 		ids = append(ids, id)
 	}
+	// A pair marked reversed in this statement must not leave its already stored half counting
+	// as spending (spec §8.4).
+	if err := reverseStored(ctx, tx, existingReversed); err != nil {
+		return nil, err
+	}
 	return ids, nil
+}
+
+// storedSpendingByDedupe returns the stored expense/refund row with dedupeKey, if any; rows the
+// user or a rule moved to another kind are left alone.
+func storedSpendingByDedupe(ctx context.Context, tx *sql.Tx, dedupeKey string) (storedSpending, bool, error) {
+	var s storedSpending
+	err := tx.QueryRowContext(ctx, `SELECT id, merchant_key, category_id, categorized_by, question_id FROM transactions
+		WHERE dedupe_key = ? AND kind IN ('expense', 'refund') FOR UPDATE`, dedupeKey).
+		Scan(&s.id, &s.key, &s.categoryID, &s.categorizedBy, &s.questionID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return s, false, nil
+	}
+	return s, err == nil, err
 }
 
 func insertInstallments(ctx context.Context, tx *sql.Tx, docID, accountID int64, items []projectedInstallment) error {

@@ -99,14 +99,38 @@ func (im *Importer) sweepDocument(ctx context.Context, docID int64) (n int, err 
 	}
 
 	provider.MarkReversals(txs)
-	var ids []any
-	questions := map[int64]bool{}
+	var reversed []storedSpending
 	for i, t := range txs {
-		if t.Kind != provider.Reversed {
-			continue
+		if t.Kind == provider.Reversed {
+			reversed = append(reversed, stored[i])
 		}
-		s := stored[i]
-		ids = append(ids, s.id)
+	}
+	if err = reverseStored(ctx, tx, reversed); err != nil {
+		return 0, err
+	}
+	if len(reversed) > 0 {
+		slog.Info("estornos integrais anulados", "document_id", docID, "transactions", len(reversed))
+	}
+	if _, err = tx.ExecContext(ctx, `UPDATE documents SET reversals_checked = TRUE WHERE id = ?`, docID); err != nil {
+		return 0, err
+	}
+	if err = tx.Commit(); err != nil {
+		return 0, err
+	}
+	return len(reversed), nil
+}
+
+// reverseStored turns stored rows into reversals inside tx: kind reversed, without category,
+// categorized_by or question; a pending/skipped question left without transactions is marked
+// answered. Rows categorized by the user are reversed too, and logged.
+func reverseStored(ctx context.Context, tx *sql.Tx, rows []storedSpending) error {
+	if len(rows) == 0 {
+		return nil
+	}
+	ids := make([]any, len(rows))
+	questions := map[int64]bool{}
+	for i, s := range rows {
+		ids[i] = s.id
 		if s.questionID.Valid {
 			questions[s.questionID.Int64] = true
 		}
@@ -115,26 +139,17 @@ func (im *Importer) sweepDocument(ctx context.Context, docID int64) (n int, err 
 				"transaction_id", s.id, "key", s.key, "category_id", s.categoryID.Int64)
 		}
 	}
-	if len(ids) > 0 {
-		in := strings.TrimSuffix(strings.Repeat("?,", len(ids)), ",")
-		if _, err = tx.ExecContext(ctx, `UPDATE transactions SET kind = 'reversed', category_id = NULL,
-			categorized_by = NULL, question_id = NULL WHERE id IN (`+in+`)`, ids...); err != nil {
-			return 0, err
+	in := strings.TrimSuffix(strings.Repeat("?,", len(ids)), ",")
+	if _, err := tx.ExecContext(ctx, `UPDATE transactions SET kind = 'reversed', category_id = NULL,
+		categorized_by = NULL, question_id = NULL WHERE id IN (`+in+`)`, ids...); err != nil {
+		return err
+	}
+	for q := range questions {
+		if _, err := tx.ExecContext(ctx, `UPDATE questions SET status = 'answered', answered_at = UTC_TIMESTAMP()
+			WHERE id = ? AND status IN ('pending', 'skipped')
+			AND NOT EXISTS (SELECT 1 FROM transactions WHERE question_id = ?)`, q, q); err != nil {
+			return err
 		}
-		for q := range questions {
-			if _, err = tx.ExecContext(ctx, `UPDATE questions SET status = 'answered', answered_at = UTC_TIMESTAMP()
-				WHERE id = ? AND status IN ('pending', 'skipped')
-				AND NOT EXISTS (SELECT 1 FROM transactions WHERE question_id = ?)`, q, q); err != nil {
-				return 0, err
-			}
-		}
-		slog.Info("estornos integrais anulados", "document_id", docID, "transactions", len(ids))
 	}
-	if _, err = tx.ExecContext(ctx, `UPDATE documents SET reversals_checked = TRUE WHERE id = ?`, docID); err != nil {
-		return 0, err
-	}
-	if err = tx.Commit(); err != nil {
-		return 0, err
-	}
-	return len(ids), nil
+	return nil
 }
