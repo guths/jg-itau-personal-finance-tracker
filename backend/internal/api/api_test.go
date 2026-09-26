@@ -474,3 +474,29 @@ func TestCategories(t *testing.T) {
 		t.Errorf("tree after = %+v", last)
 	}
 }
+
+func TestTransactionsReversedKind(t *testing.T) {
+	a := newAPI(t)
+	a.importFixture()
+	var all []txResp
+	a.do("GET", "/api/transactions?month=2026-09&uncategorized=true", nil, &all)
+	if len(all) == 0 {
+		t.Fatal("no transactions")
+	}
+	id := all[0].ID
+	if _, err := a.s.DB.Exec(`UPDATE transactions SET kind = 'reversed', question_id = NULL WHERE id = ?`, id); err != nil {
+		t.Fatal(err)
+	}
+	var rev []txResp
+	if code := a.do("GET", "/api/transactions?kind=reversed", nil, &rev); code != 200 || len(rev) != 1 || rev[0].ID != id || rev[0].Kind != "reversed" {
+		t.Errorf("kind=reversed = %d %+v", code, rev)
+	}
+	var unc []txResp
+	a.do("GET", "/api/transactions?month=2026-09&uncategorized=true", nil, &unc)
+	if len(unc) != len(all)-1 {
+		t.Errorf("uncategorized = %d, want %d (a reversal is not spending)", len(unc), len(all)-1)
+	}
+	if code := a.do("PATCH", fmt.Sprintf("/api/transactions/%d", all[1].ID), map[string]any{"kind": "reversed", "scope": "one"}, nil); code != 422 {
+		t.Errorf("setting reversed by hand = %d, want 422", code)
+	}
+}

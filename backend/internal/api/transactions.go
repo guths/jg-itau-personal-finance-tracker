@@ -10,7 +10,7 @@ import (
 
 var txKinds = map[string]bool{
 	"expense": true, "refund": true, "bill_payment": true, "own_transfer": true,
-	"investment": true, "income": true, "ignored": true,
+	"investment": true, "income": true, "ignored": true, "reversed": true,
 }
 
 // maxTransactions caps GET /api/transactions (filters narrow it down).
