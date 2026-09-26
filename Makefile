@@ -1,4 +1,4 @@
-.PHONY: test test-samples inspect db-up db-down api
+.PHONY: test test-samples inspect db-up db-down api web web-build web-test
 
 test:
 	cd backend && go test ./...
@@ -21,3 +21,16 @@ db-down:
 # API em http://127.0.0.1:8080 (aplica as migrations ao subir)
 api:
 	cd backend && go run ./cmd/api
+
+# Web em http://localhost:5173 (proxy /api → 127.0.0.1:8080); instala as dependências na primeira vez
+web:
+	@test -d web/node_modules || (cd web && npm ci)
+	cd web && npm run dev
+
+web-build:
+	@test -d web/node_modules || (cd web && npm ci)
+	cd web && npm run build
+
+web-test:
+	@test -d web/node_modules || (cd web && npm ci)
+	cd web && npm run lint && npx vitest run
