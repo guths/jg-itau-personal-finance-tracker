@@ -1,4 +1,4 @@
-.PHONY: test test-samples inspect
+.PHONY: test test-samples inspect db-up db-down
 
 test:
 	cd backend && go test ./...
@@ -10,3 +10,10 @@ test-samples:
 # Ex.: make inspect ARGS="-v ../samples/itau/*.pdf"
 inspect:
 	cd backend && go run ./cmd/inspect $(ARGS)
+
+# MySQL 8.4 em 127.0.0.1:3307 (espera ficar saudável)
+db-up:
+	docker compose up -d --wait
+
+db-down:
+	docker compose down
