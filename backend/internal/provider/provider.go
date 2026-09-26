@@ -27,6 +27,9 @@ const (
 	Investment  TxKind = "investment"
 	Income      TxKind = "income"
 	Ignored     TxKind = "ignored"
+	// Reversed is a purchase and its refund that cancel out (see MarkReversals): kept as a
+	// transaction but never counted as spending.
+	Reversed TxKind = "reversed"
 )
 
 // AccountKind is the kind of account a statement belongs to.
