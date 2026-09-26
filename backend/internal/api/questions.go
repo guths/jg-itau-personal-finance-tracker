@@ -215,8 +215,13 @@ func (s *Server) postInterpret(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, resp)
 }
 
+// postSuggest recovers transactions left without category nor question and asks the LLM again
+// for questions without suggestions; it runs to the end even if the client disconnects.
 func (s *Server) postSuggest(w http.ResponseWriter, r *http.Request) {
-	n, err := s.categorize.Suggest(r.Context())
+	extendWriteDeadline(w)
+	ctx, cancel := detach(r)
+	defer cancel()
+	n, err := s.categorize.Suggest(ctx)
 	if err != nil {
 		writeServiceError(w, r, err, "não encontrado")
 		return

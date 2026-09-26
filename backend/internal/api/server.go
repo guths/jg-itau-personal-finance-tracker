@@ -2,6 +2,8 @@
 package api
 
 import (
+	"context"
+	"errors"
 	"log/slog"
 	"net/http"
 	"time"
@@ -63,6 +65,26 @@ type statusWriter struct {
 func (w *statusWriter) WriteHeader(code int) {
 	w.status = code
 	w.ResponseWriter.WriteHeader(code)
+}
+
+// Unwrap lets http.ResponseController reach the connection (write deadlines).
+func (w *statusWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
+
+// longRunTimeout bounds batch work (import, suggestions) that may call the LLM many times.
+const longRunTimeout = 30 * time.Minute
+
+// extendWriteDeadline lets a long handler answer after the server's WriteTimeout.
+func extendWriteDeadline(w http.ResponseWriter) {
+	err := http.NewResponseController(w).SetWriteDeadline(time.Now().Add(longRunTimeout + time.Minute))
+	if err != nil && !errors.Is(err, http.ErrNotSupported) {
+		slog.Warn("estender prazo de escrita", "err", err)
+	}
+}
+
+// detach returns a context for batch work that survives the client giving up (a half-done
+// batch would leave transactions without category nor question) but still has a deadline.
+func detach(r *http.Request) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.WithoutCancel(r.Context()), longRunTimeout)
 }
 
 func logRequests(next http.Handler) http.Handler {

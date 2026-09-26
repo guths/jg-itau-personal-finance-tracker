@@ -46,10 +46,14 @@ func (f *fakeProvider) Parse(*pdftext.Document, provider.DocKind) (*provider.Sta
 	return &cp, nil
 }
 
-// fakeLLM only answers free-text interpretations.
-type fakeLLM struct{ interp map[string]any }
+// fakeLLM only answers free-text interpretations; delay slows every call down.
+type fakeLLM struct {
+	interp map[string]any
+	delay  time.Duration
+}
 
 func (f *fakeLLM) JSON(_ context.Context, req llm.Request, out any) error {
+	time.Sleep(f.delay)
 	if req.SchemaName != "interpretacao" {
 		return fmt.Errorf("fora do ar")
 	}

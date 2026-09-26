@@ -258,7 +258,7 @@ A chave (seções 7.2/7.3) identifica "o mesmo estabelecimento/pessoa" entre mes
 
 ### 9.2 Pipeline (após cada lote de importação)
 
-Entrada: transações novas com tipo `expense` ou `refund`, sem categoria e sem pergunta.
+Entrada: transações com tipo `expense` ou `refund`, sem categoria, sem `categorized_by` e sem pergunta — as novas do lote e qualquer outra que tenha ficado assim (ex.: execução interrompida). `POST /api/questions/suggest` faz a mesma varredura.
 
 1. **Regra existe para a chave:**
    - `kind_override` definido → aplica o tipo (`own_transfer`/`ignored`), `categorized_by = rule`.
@@ -458,7 +458,7 @@ Migrations com goose, embutidas no binário e aplicadas na inicialização da AP
 | `GET /api/months` | meses com dados (mais recente primeiro) |
 | `GET /api/dashboard?month=AAAA-MM` | `{summary, by_category, recurring, upcoming, evolution, top_merchants}` |
 
-Erros: `{"error": "mensagem em pt-BR"}` com status 400/404/409/422/500. Upload: só `application/pdf`, até 20 MB por arquivo. Timeout de escrita do servidor: 5 min (lotes grandes de dados antigos).
+Erros: `{"error": "mensagem em pt-BR"}` com status 400/404/409/422/500. Upload: só `application/pdf`, até 20 MB por arquivo. Timeout de escrita do servidor: 5 min (lotes grandes de dados antigos); `POST /api/imports` e `POST /api/questions/suggest` estendem o prazo para 30 min e vão até o fim mesmo se o cliente desconectar.
 
 `summary` = `{total, prev3_avg, fixed, open_bills, future_installments, uncategorized:{count,total}}`; `prev3_avg` = média dos totais dos meses **com dados** entre M−3 e M−1 (`null` se nenhum). `by_category` = categorias com total e subcategorias. `evolution` = últimos 12 meses por categoria. `top_merchants` = 10 maiores chaves do mês (apelido, total, quantidade, categoria). Todos os valores em centavos; só entram `expense` e `refund`.
 

@@ -38,8 +38,10 @@ type importResponse struct {
 }
 
 // postImports receives multipart "files" (or "files[]") PDFs. Files that are not PDFs or are
-// larger than 20 MB are reported as failed without stopping the batch.
+// larger than 20 MB are reported as failed without stopping the batch. Once the upload is read,
+// the import runs to the end even if the client disconnects.
 func (s *Server) postImports(w http.ResponseWriter, r *http.Request) {
+	extendWriteDeadline(w) // the upload and the LLM calls may take longer than WriteTimeout
 	r.Body = http.MaxBytesReader(w, r.Body, maxRequestSize)
 	mr, err := r.MultipartReader()
 	if err != nil {
@@ -85,7 +87,9 @@ func (s *Server) postImports(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "nenhum arquivo enviado no campo \"files\"")
 		return
 	}
-	batch, err := s.importer.Import(r.Context(), files)
+	ctx, cancel := detach(r)
+	defer cancel()
+	batch, err := s.importer.Import(ctx, files)
 	if err != nil {
 		writeInternal(w, r, err)
 		return
