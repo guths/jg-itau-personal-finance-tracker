@@ -51,9 +51,27 @@ curl 'http://127.0.0.1:8080/api/dashboard?month=2026-09'
 
 `make db-down` para o MySQL (os dados ficam no volume `mysql-data`).
 
+## Rodar o app
+
+Requer também Node 24+ e npm. Em três terminais:
+
+```bash
+make db-up   # MySQL em 127.0.0.1:3307
+make api     # API em http://127.0.0.1:8080
+make web     # app em http://localhost:5173 (instala as dependências na primeira vez)
+```
+
+O Vite encaminha `/api` para a API, então basta abrir http://localhost:5173. Fluxo mensal:
+**Importar** os PDFs → responder o que ficou em dúvida em **Perguntas** → ver o **Dashboard**.
+Correções ficam em **Lançamentos** (troca de categoria na linha, só este ou todos da chave) e em
+**Categorias e regras** (taxonomia, cores, regras aprendidas e nomes das contas).
+
+`make web-build` gera o build de produção em `web/dist/`.
+
 ## Testes
 
 ```bash
 make test           # unitários + integração (os de banco são pulados sem o MySQL de `make db-up`)
 make test-samples   # regressão com os PDFs reais de samples/
+make web-test       # lint + Vitest do app web
 ```

@@ -43,7 +43,7 @@ export function QuestionDetails({ question: q }: { question: Question }) {
             {q.status === "skipped" && <Badge variant="outline">pulada antes</Badge>}
           </div>
         </div>
-        <div className="text-right">
+        <div className="sm:text-right">
           <Money cents={q.total_cents} signed className="text-2xl font-semibold tracking-tight" />
           <p className="text-xs text-muted-foreground">{plural(q.count, "lançamento", "lançamentos")}</p>
         </div>

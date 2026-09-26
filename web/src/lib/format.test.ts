@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest"
 
 import {
-  addMonths,
   formatBRL,
   formatBRLCompact,
   formatDate,
+  formatDateShort,
   formatDateTime,
   formatMonth,
   formatMonthLong,
@@ -70,14 +70,6 @@ describe("formatMonthLong", () => {
   })
 })
 
-describe("addMonths", () => {
-  it("soma e subtrai meses atravessando o ano", () => {
-    expect(addMonths("2026-11", 2)).toBe("2027-01")
-    expect(addMonths("2026-01", -1)).toBe("2025-12")
-    expect(addMonths("2026-09", 0)).toBe("2026-09")
-  })
-})
-
 describe("formatDate", () => {
   it("usa dd/mm/aaaa sem mexer com fuso", () => {
     expect(formatDate("2026-09-01")).toBe("01/09/2026")
@@ -87,6 +79,13 @@ describe("formatDate", () => {
   it("trata vazio", () => {
     expect(formatDate(null)).toBe("—")
     expect(formatDate("")).toBe("—")
+  })
+})
+
+describe("formatDateShort", () => {
+  it("usa dd/mm/aa", () => {
+    expect(formatDateShort("2026-09-01")).toBe("01/09/26")
+    expect(formatDateShort(null)).toBe("—")
   })
 })
 

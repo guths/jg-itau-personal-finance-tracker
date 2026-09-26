@@ -73,21 +73,18 @@ export function formatMonthLong(value: string): string {
   return p ? `${MONTHS_LONG[p.month - 1]} de ${p.year}` : value
 }
 
-/** Soma n meses a "AAAA-MM". */
-export function addMonths(value: string, n: number): string {
-  const p = parseMonth(value)
-  if (!p) return value
-  const idx = p.year * 12 + (p.month - 1) + n
-  const year = Math.floor(idx / 12)
-  const month = (idx % 12) + 1
-  return `${year}-${String(month).padStart(2, "0")}`
-}
-
 /** "2026-09-01" → "01/09/2026" (sem converter fuso). */
 export function formatDate(value: string | null | undefined): string {
   if (!value) return "—"
   const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(value)
   return m ? `${m[3]}/${m[2]}/${m[1]}` : value
+}
+
+/** "2026-09-01" → "01/09/26". */
+export function formatDateShort(value: string | null | undefined): string {
+  if (!value) return "—"
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(value)
+  return m ? `${m[3]}/${m[2]}/${m[1].slice(2)}` : value
 }
 
 /** "2026-09-01" → "01/09" (tabelas compactas). */
