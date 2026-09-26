@@ -98,13 +98,31 @@ func (s *Server) postCategory(w http.ResponseWriter, r *http.Request) {
 		}
 		color = body.Color
 	}
-	res, err := s.store.DB.ExecContext(ctx, `INSERT INTO categories (parent_id, name, color, position)
+	tx, err := s.store.DB.BeginTx(ctx, nil)
+	if err != nil {
+		writeInternal(w, r, err)
+		return
+	}
+	defer tx.Rollback()
+	res, err := tx.ExecContext(ctx, `INSERT INTO categories (parent_id, name, color, position)
 		SELECT ?, ?, ?, COALESCE(MAX(position), 0) + 1 FROM categories WHERE parent_id <=> ?`, parent, name, color, parent)
 	if err != nil {
 		writeInternal(w, r, err)
 		return
 	}
 	id, _ := res.LastInsertId()
+	if parent == nil {
+		// Transactions always point to a subcategory: a category is born with "Outros" so it
+		// can be chosen right away (questions, table, GPT).
+		if _, err := tx.ExecContext(ctx, `INSERT INTO categories (parent_id, name, position) VALUES (?, 'Outros', 1)`, id); err != nil {
+			writeInternal(w, r, err)
+			return
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		writeInternal(w, r, err)
+		return
+	}
 	writeJSON(w, http.StatusCreated, map[string]any{"id": id})
 }
 

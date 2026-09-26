@@ -470,8 +470,21 @@ func TestCategories(t *testing.T) {
 	}
 	a.do("GET", "/api/categories", nil, &tree)
 	last := tree[len(tree)-1]
-	if len(tree) != 14 || last.Name != "Pet" || len(last.Subcategories) != 1 {
+	if len(tree) != 14 || last.Name != "Pet" || len(last.Subcategories) != 2 || last.Subcategories[0].Name != "Outros" {
 		t.Errorf("tree after = %+v", last)
+	}
+}
+
+// A new category is born with an "Outros" subcategory: transactions always point to a
+// subcategory, so a category without one could never be chosen in the questions.
+func TestNewCategoryIsImmediatelyUsable(t *testing.T) {
+	a := newAPI(t)
+	var created map[string]any
+	if code := a.do("POST", "/api/categories", map[string]any{"name": "Hobbies", "color": "#336699"}, &created); code != 201 {
+		t.Fatalf("create = %d", code)
+	}
+	if id := a.subID("Hobbies", "Outros"); id == 0 {
+		t.Fatal(`"Hobbies › Outros" was not created`)
 	}
 }
 
