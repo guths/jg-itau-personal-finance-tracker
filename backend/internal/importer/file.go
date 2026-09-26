@@ -62,6 +62,7 @@ func (im *Importer) importFile(ctx context.Context, f File) (FileResult, []int64
 		}
 		return res, nil
 	}
+	provider.MarkReversals(st.Transactions) // before insert: reversed rows never reach categorization
 
 	saved, ids, err := im.persist(ctx, f, sha, p.ID(), st)
 	var dup errDuplicate

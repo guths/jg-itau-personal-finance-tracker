@@ -52,6 +52,7 @@ func run() error {
 	}
 	cat := categorize.New(st, client)
 	im := importer.New(st, provider.NewRegistry(itau.New()), cfg.PDFPasswords, cfg.DataDir, cat)
+	sweepReversals(im)
 	handler := api.New(st, im, cat, insights.New(st))
 
 	srv := &http.Server{
@@ -80,6 +81,21 @@ func run() error {
 		return srv.Shutdown(shutdown)
 	}
 	return nil
+}
+
+// sweepReversals marks the full reversals of documents imported before reversal detection
+// existed (spec §8.4). A failure is logged and does not stop the API.
+func sweepReversals(im *importer.Importer) {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	n, err := im.SweepReversals(ctx)
+	if err != nil {
+		slog.Error("varrer estornos integrais", "err", err)
+		return
+	}
+	if n > 0 {
+		slog.Info("estornos integrais anulados nos documentos já importados", "transactions", n)
+	}
 }
 
 // checkLoopback refuses to listen outside the machine: v1 has no login (spec §17).

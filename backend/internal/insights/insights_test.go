@@ -277,3 +277,29 @@ func TestWithinMedianAndSequence(t *testing.T) {
 		t.Errorf("sequence = %d %d %v (the longest qualifying suffix)", n, avg, ok)
 	}
 }
+
+func TestReversalsAreNotSpending(t *testing.T) {
+	f := newFx(t)
+	sep, aug := month(2026, 9), month(2026, 8)
+	f.tx(sep, "ALIEXPRESS", 41986, "reversed", 0)
+	f.tx(sep, "ALIEXPRESS", -1742, "reversed", 0)
+	f.tx(sep, "ALIEXPRESS", -40244, "reversed", 0)
+	f.tx(sep, "ALIEXPRESS", 1000, "expense", 0)
+	f.tx(month(2026, 7), "NETFLIX", 5590, "expense", 0)
+	f.tx(aug, "NETFLIX", 5590, "expense", 0)
+	f.tx(sep, "NETFLIX", 5590, "reversed", 0) // does not keep the subscription alive in September
+
+	d := f.dashboard(sep, today)
+	if d.Summary.Total != 1000 || d.Summary.Uncategorized != (Uncategorized{Count: 1, Total: 1000}) {
+		t.Errorf("summary = %+v", d.Summary)
+	}
+	if len(d.TopMerchants) != 1 || d.TopMerchants[0].Total != 1000 || d.TopMerchants[0].Count != 1 {
+		t.Errorf("top = %+v", d.TopMerchants)
+	}
+	if d.Evolution[11].Total != 1000 {
+		t.Errorf("evolution = %+v", d.Evolution[11])
+	}
+	if len(d.Recurring) != 1 || d.Recurring[0].Key != "NETFLIX" || d.Recurring[0].Status != StatusAbsent || d.Recurring[0].Total != 0 {
+		t.Errorf("recurring = %+v, want NETFLIX absent in September", d.Recurring)
+	}
+}

@@ -40,6 +40,7 @@ func (f *fakeProvider) Parse(*pdftext.Document, provider.DocKind) (*provider.Sta
 		return nil, f.err
 	}
 	cp := *f.st
+	cp.Transactions = append([]provider.Transaction(nil), f.st.Transactions...) // the importer may mark reversals
 	return &cp, nil
 }
 

@@ -6,7 +6,8 @@ import (
 	"errors"
 )
 
-// transaction kinds a user may set on a single transaction.
+// transaction kinds a user may set on a single transaction. "reversed" is not one of them: only
+// reversal detection sets it (the user may turn a reversed row back into spending).
 var userKinds = map[string]bool{
 	"expense": true, "refund": true, "bill_payment": true, "own_transfer": true,
 	"investment": true, "income": true, "ignored": true,

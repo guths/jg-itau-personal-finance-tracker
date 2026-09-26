@@ -60,7 +60,12 @@ func parseFile(reg *provider.Registry, passwords []string, path string) (*provid
 	if err != nil {
 		return nil, err
 	}
-	return p.Parse(doc, kind)
+	st, err := p.Parse(doc, kind)
+	if err != nil {
+		return nil, err
+	}
+	provider.MarkReversals(st.Transactions) // as the importer does
+	return st, nil
 }
 
 var kindLabels = []struct {
@@ -69,6 +74,7 @@ var kindLabels = []struct {
 }{
 	{provider.Expense, "gastos"},
 	{provider.Refund, "estornos"},
+	{provider.Reversed, "estornos anul."},
 	{provider.BillPayment, "pagam. fatura"},
 	{provider.Investment, "investimentos"},
 	{provider.Income, "entradas"},

@@ -107,8 +107,8 @@ func insertDocument(ctx context.Context, tx *sql.Tx, accountID int64, name, sha,
 		total = sql.NullInt64{Int64: st.TotalCents, Valid: true}
 	}
 	r, err := tx.ExecContext(ctx, `INSERT INTO documents (account_id, kind, file_sha256, file_name, stored_path,
-		period_start, period_end, closing_date, due_date, reference_month, total_cents)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		period_start, period_end, closing_date, due_date, reference_month, total_cents, reversals_checked)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, TRUE)`,
 		accountID, string(st.Kind), sha, clip(name, 255), stored,
 		nullDate(st.PeriodStart), nullDate(st.PeriodEnd), nullDate(st.ClosingDate), nullDate(st.DueDate),
 		nullDate(documentMonth(st)), total)

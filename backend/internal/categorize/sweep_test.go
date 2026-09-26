@@ -93,3 +93,20 @@ func TestSuggestAsksBatchesConcurrently(t *testing.T) {
 		t.Errorf("question = %+v", q)
 	}
 }
+
+func TestRunSkipsReversals(t *testing.T) {
+	f := newFixture(t)
+	buy := f.tx("ALIEXPRESS", 41986, false)
+	back := f.tx("ALIEXPRESS", -41986, false)
+	f.exec(`UPDATE transactions SET kind = 'reversed' WHERE id IN (?, ?)`, buy, back)
+	other := f.tx("LOJA", 1000, false)
+	r := run(t, New(f.s, nil), buy, back, other)
+	if r.Questions != 1 {
+		t.Errorf("result = %+v, want only LOJA asked", r)
+	}
+	for _, id := range []int64{buy, back} {
+		if s := f.state(id); s != (txState{Kind: "reversed"}) {
+			t.Errorf("tx %d = %+v", id, s)
+		}
+	}
+}
