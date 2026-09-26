@@ -3,6 +3,7 @@ module jgfinance
 go 1.26.0
 
 require (
+	github.com/google/go-cmp v0.7.0
 	github.com/klippa-app/go-pdfium v1.21.0
 	golang.org/x/text v0.42.0
 )
