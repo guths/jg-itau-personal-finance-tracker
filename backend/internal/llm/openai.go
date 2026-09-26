@@ -12,7 +12,7 @@ import (
 )
 
 // Timeout bounds each call, retries included (spec §9.3).
-const Timeout = 60 * time.Second
+const Timeout = 3 * time.Minute
 
 // OpenAI implements Client with the official SDK (Chat Completions + json_schema, strict).
 type OpenAI struct {

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sync"
 	"testing"
 	"time"
 
@@ -20,9 +21,12 @@ type fakeLLM struct {
 	interp map[string]any
 	err    error
 	reqs   []llm.Request
+	mu     sync.Mutex
 }
 
 func (f *fakeLLM) JSON(_ context.Context, req llm.Request, out any) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.reqs = append(f.reqs, req)
 	if f.err != nil {
 		return f.err

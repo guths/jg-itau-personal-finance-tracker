@@ -41,4 +41,7 @@ func New(st *store.Store, client llm.Client) *Categorizer {
 }
 
 // batchSize is the maximum number of keys sent to the LLM per call (spec §9.2).
-const batchSize = 40
+const batchSize = 20
+
+// llmConcurrency bounds how many batch calls run at the same time.
+const llmConcurrency = 4

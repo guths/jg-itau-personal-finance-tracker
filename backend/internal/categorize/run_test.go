@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"sort"
 	"strings"
 	"testing"
 )
@@ -173,7 +174,7 @@ func TestBadLLMOutputsBecomeQuestionsWithoutSuggestions(t *testing.T) {
 	}
 }
 
-func TestLLMBatchesOf40Keys(t *testing.T) {
+func TestLLMBatchesOf20KeysConcurrently(t *testing.T) {
 	f := newFixture(t)
 	fake := &fakeLLM{}
 	var ids []int64
@@ -183,8 +184,13 @@ func TestLLMBatchesOf40Keys(t *testing.T) {
 	if r := run(t, New(f.s, fake), ids...); r.Questions != 45 {
 		t.Errorf("result = %+v", r)
 	}
-	if len(fake.reqs) != 2 || strings.Count(fake.reqs[0].User, `"key": "LOJA`) != 40 || strings.Count(fake.reqs[1].User, `"key": "LOJA`) != 5 {
-		t.Errorf("calls = %d", len(fake.reqs))
+	var sizes []int
+	for _, req := range fake.reqs {
+		sizes = append(sizes, strings.Count(req.User, `"key": "LOJA`))
+	}
+	sort.Ints(sizes)
+	if !reflect.DeepEqual(sizes, []int{5, 20, 20}) {
+		t.Errorf("batch sizes = %v, want [5 20 20]", sizes)
 	}
 }
 

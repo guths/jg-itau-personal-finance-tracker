@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -98,18 +99,35 @@ func (c *Categorizer) Run(ctx context.Context, txIDs []int64) (Result, error) {
 		return res, err
 	}
 	pendingKeys := sortedKeys(toLLM)
+	var chunks [][]string
 	for start := 0; start < len(pendingKeys); start += batchSize {
-		chunk := pendingKeys[start:min(start+batchSize, len(pendingKeys))]
+		chunks = append(chunks, pendingKeys[start:min(start+batchSize, len(pendingKeys))])
+	}
+	// Batches are independent: ask them concurrently (bounded), then resolve in order.
+	answers := make([]map[string]*llmItem, len(chunks))
+	sem := make(chan struct{}, llmConcurrency)
+	var wg sync.WaitGroup
+	for i, chunk := range chunks {
 		groups := make([][]pendingTx, len(chunk))
-		for i, k := range chunk {
-			groups[i] = toLLM[k]
+		for j, k := range chunk {
+			groups[j] = toLLM[k]
 		}
-		answers, err := c.askLLM(ctx, tax, groups)
-		if err != nil {
-			slog.Warn("categorização: GPT indisponível; itens viram perguntas sem sugestão", "err", err)
-		}
-		for i, key := range chunk {
-			auto, q, err := c.resolveKey(ctx, tax, key, groups[i], answers[key])
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			a, err := c.askLLM(ctx, tax, groups)
+			if err != nil {
+				slog.Warn("categorização: GPT indisponível; itens viram perguntas sem sugestão", "err", err)
+			}
+			answers[i] = a
+		}()
+	}
+	wg.Wait()
+	for i, chunk := range chunks {
+		for _, key := range chunk {
+			auto, q, err := c.resolveKey(ctx, tax, key, toLLM[key], answers[i][key])
 			if err != nil {
 				return res, err
 			}
