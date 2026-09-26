@@ -83,6 +83,22 @@ func TestAnswerOwnTransferChangesKind(t *testing.T) {
 	}
 }
 
+func TestAnswerOwnTransferWithoutRememberAsksAgain(t *testing.T) {
+	f := newFixture(t)
+	c := New(f.s, nil)
+	qid, _ := questionFor(t, f, c, "PIX TRANSF JOAO", 1)
+	if err := c.Answer(context.Background(), qid, Answer{Kind: "ignored"}); err != nil {
+		t.Fatal(err)
+	}
+	next := f.tx("PIX TRANSF JOAO", 700, true)
+	if r := run(t, c, next); r != (Result{Questions: 1}) {
+		t.Errorf("result = %+v", r)
+	}
+	if s := f.state(next); s.Kind != "expense" || s.QuestionID == 0 || !f.question(s.QuestionID).PerTx {
+		t.Errorf("next = %+v", s)
+	}
+}
+
 func TestAnswerRememberResolvesOtherOpenQuestionsOfKey(t *testing.T) {
 	f := newFixture(t)
 	c := New(f.s, nil)

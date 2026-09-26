@@ -60,17 +60,7 @@ func (c *Categorizer) Run(ctx context.Context, txIDs []int64) (Result, error) {
 	for _, t := range txs {
 		r, hasRule := rules[t.Key]
 		switch {
-		case hasRule && r.KindOverride != "":
-			if err := c.applyKind(ctx, c.store.DB, []int64{t.ID}, r.KindOverride, "rule"); err != nil {
-				return res, err
-			}
-			res.Auto++
-		case hasRule && r.CategoryID != nil && r.Mode == "always":
-			if err := c.applyCategory(ctx, c.store.DB, []int64{t.ID}, *r.CategoryID, "rule"); err != nil {
-				return res, err
-			}
-			res.Auto++
-		case hasRule && r.Mode == "ask":
+		case hasRule && r.Mode == "ask": // asks again, suggesting the previous answer
 			var sugg []int64
 			if r.CategoryID != nil {
 				sugg = []int64{*r.CategoryID}
@@ -79,6 +69,16 @@ func (c *Categorizer) Run(ctx context.Context, txIDs []int64) (Result, error) {
 				return res, err
 			}
 			res.Questions++
+		case hasRule && r.KindOverride != "":
+			if err := c.applyKind(ctx, c.store.DB, []int64{t.ID}, r.KindOverride, "rule"); err != nil {
+				return res, err
+			}
+			res.Auto++
+		case hasRule && r.CategoryID != nil:
+			if err := c.applyCategory(ctx, c.store.DB, []int64{t.ID}, *r.CategoryID, "rule"); err != nil {
+				return res, err
+			}
+			res.Auto++
 		default:
 			if qid, ok := open[t.Key]; ok { // the key is already waiting for an answer
 				if _, err := c.store.DB.ExecContext(ctx, `UPDATE transactions SET question_id = ? WHERE id = ?`, qid, t.ID); err != nil {
