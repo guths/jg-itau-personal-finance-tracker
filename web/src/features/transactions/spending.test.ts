@@ -15,3 +15,9 @@ describe("voltar a ser gasto", () => {
     expect(isSpendingKind("ignored")).toBe(false)
   })
 })
+
+describe("estorno anulado", () => {
+  it("não é gasto", () => {
+    expect(isSpendingKind("reversed")).toBe(false)
+  })
+})

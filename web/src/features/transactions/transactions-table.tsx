@@ -15,13 +15,19 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import type { PendingChange } from "@/features/transactions/recategorize-dialog"
 import { isSpendingKind, spendingKindOf } from "@/features/transactions/spending"
 import { formatDateShort } from "@/lib/format"
-import { CATEGORIZED_BY_LABEL, TX_KIND_LABEL } from "@/lib/labels"
+import { CATEGORIZED_BY_LABEL, TX_KIND_HINT, TX_KIND_LABEL, txKindLabel } from "@/lib/labels"
 import type { Transaction } from "@/lib/types"
 
 const isSpending = (t: Transaction) => isSpendingKind(t.kind)
 
 function CategoryCell({ t, disabled, onChange }: { t: Transaction; disabled: boolean; onChange: (c: PendingChange) => void }) {
-  if (!isSpending(t)) return <Badge variant="outline">{TX_KIND_LABEL[t.kind]}</Badge>
+  if (t.kind === "reversed")
+    return (
+      <Badge variant="secondary" className="text-muted-foreground" title={TX_KIND_HINT.reversed}>
+        {txKindLabel(t.kind)}
+      </Badge>
+    )
+  if (!isSpending(t)) return <Badge variant="outline">{txKindLabel(t.kind)}</Badge>
   return (
     <div className="space-y-0.5">
       <CategoryPicker

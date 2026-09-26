@@ -14,6 +14,8 @@ export type TxKind =
   | "investment"
   | "income"
   | "ignored"
+  /** Compra e estorno no mesmo dia que se anulam: fica como lançamento, mas não é gasto. */
+  | "reversed"
 
 export type CategorizedBy = "rule" | "llm" | "user"
 export type ExcludedKind = "own_transfer" | "ignored"

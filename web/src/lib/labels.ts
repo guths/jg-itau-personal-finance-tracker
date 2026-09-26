@@ -8,6 +8,17 @@ export const TX_KIND_LABEL: Record<TxKind, string> = {
   investment: "Investimento",
   income: "Receita",
   ignored: "Ignorado",
+  reversed: "Estorno anulado",
+}
+
+/** Explicação curta dos tipos que precisam dela (tooltip). */
+export const TX_KIND_HINT: Partial<Record<TxKind, string>> = {
+  reversed: "Compra e estorno no mesmo dia se anulam: fica como lançamento, mas não entra nos gastos",
+}
+
+/** Rótulo do tipo; um tipo desconhecido aparece como veio da API. */
+export function txKindLabel(kind: string): string {
+  return kind in TX_KIND_LABEL ? TX_KIND_LABEL[kind as TxKind] : kind
 }
 
 export const DOCUMENT_KIND_LABEL: Record<DocumentKind, string> = {
