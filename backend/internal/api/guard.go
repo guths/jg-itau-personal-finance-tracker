@@ -10,8 +10,9 @@ import (
 
 // localOnly protects the login-less API (spec §17) from other sites open in the browser:
 //   - the Host must be localhost, 127.0.0.1 or [::1] (any port), which defeats DNS rebinding;
-//   - requests that change something need a JSON or multipart body type, which a cross-site
-//     form cannot send without a CORS preflight, and a local Origin when one is sent.
+//   - requests that change something need a local Origin when one is sent and, when they carry
+//     a body, a JSON or multipart body type, which a cross-site form cannot send without a
+//     CORS preflight.
 func localOnly(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !isLocalHost(r.Host) {
@@ -23,8 +24,11 @@ func localOnly(next http.Handler) http.Handler {
 				writeError(w, http.StatusForbidden, "origem não permitida")
 				return
 			}
+			// A bodyless write (skip, suggest, delete) carries nothing to forge; cross-site browser
+			// requests are already stopped by the Origin check above.
+			bodyless := r.ContentLength == 0 && len(r.TransferEncoding) == 0
 			mt, _, _ := mime.ParseMediaType(r.Header.Get("Content-Type"))
-			if mt != "application/json" && mt != "multipart/form-data" {
+			if !bodyless && mt != "application/json" && mt != "multipart/form-data" {
 				writeError(w, http.StatusUnsupportedMediaType, "envie Content-Type application/json ou multipart/form-data")
 				return
 			}
