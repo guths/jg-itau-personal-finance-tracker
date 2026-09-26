@@ -35,12 +35,21 @@ type rule struct {
 	Source       string
 }
 
-// Run categorizes the given transactions (spec §9.2). Only expense/refund transactions without
-// category and without question are considered. LLM failures never fail the run: the affected
-// keys become questions without suggestions.
+// Run categorizes pending spending (spec §9.2): expense/refund transactions without category,
+// without categorized_by and without question. Besides txIDs (the batch just imported) it sweeps
+// every other pending transaction, so rows left behind by an interrupted run are picked up again.
+// LLM failures never fail the run: the affected keys become questions without suggestions.
 func (c *Categorizer) Run(ctx context.Context, txIDs []int64) (Result, error) {
+	return c.sweep(ctx)
+}
+
+// sweep categorizes every pending transaction; runs are serialized so that concurrent sweeps
+// (import and "sugerir de novo") never create duplicate questions.
+func (c *Categorizer) sweep(ctx context.Context) (Result, error) {
+	c.runMu.Lock()
+	defer c.runMu.Unlock()
 	var res Result
-	txs, err := c.loadPending(ctx, txIDs)
+	txs, err := c.loadPending(ctx)
 	if err != nil || len(txs) == 0 {
 		return res, err
 	}
@@ -98,34 +107,11 @@ func (c *Categorizer) Run(ctx context.Context, txIDs []int64) (Result, error) {
 	if err != nil {
 		return res, err
 	}
-	pendingKeys := sortedKeys(toLLM)
-	var chunks [][]string
-	for start := 0; start < len(pendingKeys); start += batchSize {
-		chunks = append(chunks, pendingKeys[start:min(start+batchSize, len(pendingKeys))])
-	}
-	// Batches are independent: ask them concurrently (bounded), then resolve in order.
-	answers := make([]map[string]*llmItem, len(chunks))
-	sem := make(chan struct{}, llmConcurrency)
-	var wg sync.WaitGroup
+	chunks, answers, errs := c.askBatches(ctx, tax, toLLM)
 	for i, chunk := range chunks {
-		groups := make([][]pendingTx, len(chunk))
-		for j, k := range chunk {
-			groups[j] = toLLM[k]
+		if errs[i] != nil {
+			slog.Warn("categorização: GPT indisponível; itens viram perguntas sem sugestão", "err", errs[i])
 		}
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			sem <- struct{}{}
-			defer func() { <-sem }()
-			a, err := c.askLLM(ctx, tax, groups)
-			if err != nil {
-				slog.Warn("categorização: GPT indisponível; itens viram perguntas sem sugestão", "err", err)
-			}
-			answers[i] = a
-		}()
-	}
-	wg.Wait()
-	for i, chunk := range chunks {
 		for _, key := range chunk {
 			auto, q, err := c.resolveKey(ctx, tax, key, toLLM[key], answers[i][key])
 			if err != nil {
@@ -136,6 +122,35 @@ func (c *Categorizer) Run(ctx context.Context, txIDs []int64) (Result, error) {
 		}
 	}
 	return res, nil
+}
+
+// askBatches splits the keys (sorted) into batches of batchSize and asks the LLM about them
+// concurrently, at most llmConcurrency calls at a time. answers[i] and errs[i] belong to
+// chunks[i].
+func (c *Categorizer) askBatches(ctx context.Context, tax taxonomy, byKey map[string][]pendingTx) (chunks [][]string, answers []map[string]*llmItem, errs []error) {
+	keys := sortedKeys(byKey)
+	for start := 0; start < len(keys); start += batchSize {
+		chunks = append(chunks, keys[start:min(start+batchSize, len(keys))])
+	}
+	answers = make([]map[string]*llmItem, len(chunks))
+	errs = make([]error, len(chunks))
+	sem := make(chan struct{}, llmConcurrency)
+	var wg sync.WaitGroup
+	for i, chunk := range chunks {
+		groups := make([][]pendingTx, len(chunk))
+		for j, k := range chunk {
+			groups[j] = byKey[k]
+		}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			answers[i], errs[i] = c.askLLM(ctx, tax, groups)
+		}()
+	}
+	wg.Wait()
+	return chunks, answers, errs
 }
 
 // resolveKey applies a certain LLM answer or turns the key into one grouped question.
@@ -212,37 +227,28 @@ func (c *Categorizer) askLLM(ctx context.Context, tax taxonomy, groups [][]pendi
 	return answers, nil
 }
 
-func (c *Categorizer) loadPending(ctx context.Context, ids []int64) ([]pendingTx, error) {
-	if len(ids) == 0 {
-		return nil, nil
+// loadPending returns every spending transaction still waiting for categorization.
+func (c *Categorizer) loadPending(ctx context.Context) ([]pendingTx, error) {
+	rows, err := c.store.DB.QueryContext(ctx, `SELECT t.id, t.merchant_key, t.description, t.amount_cents,
+		t.occurred_on, t.person_transfer, COALESCE(t.bank_category, ''), COALESCE(t.city, ''), a.kind
+		FROM transactions t JOIN accounts a ON a.id = t.account_id
+		WHERE t.kind IN ('expense', 'refund')
+		AND t.category_id IS NULL AND t.categorized_by IS NULL AND t.question_id IS NULL
+		ORDER BY t.id`)
+	if err != nil {
+		return nil, err
 	}
+	defer rows.Close()
 	var out []pendingTx
-	for start := 0; start < len(ids); start += 500 {
-		chunk := ids[start:min(start+500, len(ids))]
-		rows, err := c.store.DB.QueryContext(ctx, `SELECT t.id, t.merchant_key, t.description, t.amount_cents,
-			t.occurred_on, t.person_transfer, COALESCE(t.bank_category, ''), COALESCE(t.city, ''), a.kind
-			FROM transactions t JOIN accounts a ON a.id = t.account_id
-			WHERE t.id IN (`+placeholders(len(chunk))+`) AND t.kind IN ('expense', 'refund')
-			AND t.category_id IS NULL AND t.categorized_by IS NULL AND t.question_id IS NULL
-			ORDER BY t.id`, int64Args(chunk)...)
-		if err != nil {
+	for rows.Next() {
+		var t pendingTx
+		if err := rows.Scan(&t.ID, &t.Key, &t.Description, &t.AmountCents, &t.Date, &t.PersonTransfer,
+			&t.BankCategory, &t.City, &t.AccountKind); err != nil {
 			return nil, err
 		}
-		for rows.Next() {
-			var t pendingTx
-			if err := rows.Scan(&t.ID, &t.Key, &t.Description, &t.AmountCents, &t.Date, &t.PersonTransfer,
-				&t.BankCategory, &t.City, &t.AccountKind); err != nil {
-				rows.Close()
-				return nil, err
-			}
-			out = append(out, t)
-		}
-		rows.Close()
-		if err := rows.Err(); err != nil {
-			return nil, err
-		}
+		out = append(out, t)
 	}
-	return out, nil
+	return out, rows.Err()
 }
 
 const ruleColumns = `id, merchant_key, category_id, COALESCE(kind_override, ''), mode, COALESCE(alias, ''), recurring, source`

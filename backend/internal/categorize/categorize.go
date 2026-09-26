@@ -4,6 +4,7 @@ package categorize
 
 import (
 	"errors"
+	"sync"
 
 	"jgfinance/internal/llm"
 	"jgfinance/internal/store"
@@ -33,6 +34,7 @@ var (
 type Categorizer struct {
 	store *store.Store
 	llm   llm.Client // nil = no AI: every item becomes a question without suggestions
+	runMu sync.Mutex // serializes sweeps of pending transactions
 }
 
 // New returns a Categorizer; client may be nil.

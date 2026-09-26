@@ -286,10 +286,15 @@ func (c *Categorizer) questionContext(ctx context.Context, q questionRow, tax ta
 	}, rows.Err()
 }
 
-// Suggest asks the LLM again for open grouped questions that have no suggestions (e.g. created
-// while the LLM was unavailable) and stores the new suggestions and question text. It never
-// categorizes by itself. It returns how many questions got suggestions.
+// Suggest first sweeps pending transactions left without category nor question (e.g. by an
+// interrupted import), then asks the LLM again for open grouped questions that have no
+// suggestions (e.g. created while the LLM was unavailable) and stores the new suggestions and
+// question text. It never categorizes a question by itself. It returns how many questions got
+// suggestions.
 func (c *Categorizer) Suggest(ctx context.Context) (int, error) {
+	if _, err := c.sweep(ctx); err != nil {
+		return 0, err
+	}
 	if c.llm == nil {
 		return 0, ErrNoLLM
 	}
@@ -322,24 +327,23 @@ func (c *Categorizer) Suggest(ctx context.Context) (int, error) {
 	if err := rows.Err(); err != nil {
 		return 0, err
 	}
+	if len(byKey) == 0 {
+		return 0, nil
+	}
 	tax, err := loadTaxonomy(ctx, c.store.DB)
 	if err != nil {
 		return 0, err
 	}
-	keys := sortedKeys(byKey)
+	chunks, answers, errs := c.askBatches(ctx, tax, byKey)
 	updated := 0
-	for start := 0; start < len(keys); start += batchSize {
-		chunk := keys[start:min(start+batchSize, len(keys))]
-		groups := make([][]pendingTx, len(chunk))
-		for i, k := range chunk {
-			groups[i] = byKey[k]
-		}
-		answers, err := c.askLLM(ctx, tax, groups)
-		if err != nil {
-			return updated, fmt.Errorf("%w: %v", ErrLLMFailed, err)
+	var llmErr error
+	for i, chunk := range chunks {
+		if errs[i] != nil {
+			llmErr = errs[i]
+			continue
 		}
 		for _, k := range chunk {
-			it := answers[k]
+			it := answers[i][k]
 			if it == nil {
 				continue
 			}
@@ -354,6 +358,9 @@ func (c *Categorizer) Suggest(ctx context.Context) (int, error) {
 			}
 			updated++
 		}
+	}
+	if llmErr != nil {
+		return updated, fmt.Errorf("%w: %v", ErrLLMFailed, llmErr)
 	}
 	return updated, nil
 }
