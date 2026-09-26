@@ -1,4 +1,4 @@
-.PHONY: test test-samples inspect db-up db-down
+.PHONY: test test-samples inspect db-up db-down api
 
 test:
 	cd backend && go test ./...
@@ -17,3 +17,7 @@ db-up:
 
 db-down:
 	docker compose down
+
+# API em http://127.0.0.1:8080 (aplica as migrations ao subir)
+api:
+	cd backend && go run ./cmd/api

@@ -24,6 +24,9 @@ var (
 	ErrInvalidScope    = errors.New("escopo inválido: use \"one\" ou \"key\"")
 	ErrNoLLM           = errors.New("IA indisponível: configure OPENAI_API_KEY no .env")
 	ErrInvalidRule     = errors.New("regra inválida")
+	ErrEmptyText       = errors.New("escreva uma resposta para interpretar")
+	// ErrLLMFailed wraps model failures (unavailable, timeout, invalid output).
+	ErrLLMFailed = errors.New("a IA não respondeu direito; tente de novo em instantes")
 )
 
 // Categorizer runs the categorization pipeline and applies the user's answers.

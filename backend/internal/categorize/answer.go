@@ -206,7 +206,7 @@ func (c *Categorizer) Skip(ctx context.Context, questionID int64) error {
 func (c *Categorizer) Interpret(ctx context.Context, questionID int64, text string) (Interpretation, error) {
 	text = strings.TrimSpace(text)
 	if text == "" {
-		return Interpretation{}, errors.New("escreva uma resposta para interpretar")
+		return Interpretation{}, ErrEmptyText
 	}
 	q, err := loadQuestion(ctx, c.store.DB, questionID, false)
 	if err != nil {
@@ -229,7 +229,7 @@ func (c *Categorizer) Interpret(ctx context.Context, questionID int64, text stri
 	}
 	var out interpretation
 	if err := c.llm.JSON(ctx, req, &out); err != nil {
-		return Interpretation{}, fmt.Errorf("a IA não conseguiu interpretar a resposta: %w", err)
+		return Interpretation{}, fmt.Errorf("%w: %v", ErrLLMFailed, err)
 	}
 	res := Interpretation{Kind: out.Kind, Alias: strings.TrimSpace(out.Alias)}
 	switch out.Kind {
@@ -240,7 +240,7 @@ func (c *Categorizer) Interpret(ctx context.Context, questionID int64, text stri
 		}
 	case "own_transfer", "ignored":
 	default:
-		return Interpretation{}, errors.New("a IA não conseguiu interpretar a resposta")
+		return Interpretation{}, fmt.Errorf("%w: tipo %q", ErrLLMFailed, out.Kind)
 	}
 	return res, nil
 }
@@ -336,7 +336,7 @@ func (c *Categorizer) Suggest(ctx context.Context) (int, error) {
 		}
 		answers, err := c.askLLM(ctx, tax, groups)
 		if err != nil {
-			return updated, fmt.Errorf("a IA não respondeu; tente de novo mais tarde: %w", err)
+			return updated, fmt.Errorf("%w: %v", ErrLLMFailed, err)
 		}
 		for _, k := range chunk {
 			it := answers[k]
