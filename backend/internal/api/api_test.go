@@ -104,6 +104,10 @@ func (a *testAPI) do(method, path string, body any, out any) int {
 		rd = bytes.NewReader(raw)
 	}
 	req := httptest.NewRequest(method, path, rd)
+	req.Host = "localhost:8080"
+	if method != http.MethodGet {
+		req.Header.Set("Content-Type", "application/json")
+	}
 	rec := httptest.NewRecorder()
 	a.h.ServeHTTP(rec, req)
 	if out != nil {
@@ -131,7 +135,7 @@ func (a *testAPI) upload(files map[string][]byte) (int, map[string]any) {
 		}
 	}
 	mw.Close()
-	req := httptest.NewRequest(http.MethodPost, "/api/imports", &buf)
+	req := httptest.NewRequest(http.MethodPost, "http://localhost:8080/api/imports", &buf)
 	req.Header.Set("Content-Type", mw.FormDataContentType())
 	rec := httptest.NewRecorder()
 	a.h.ServeHTTP(rec, req)
@@ -187,7 +191,7 @@ func TestUpload(t *testing.T) {
 	if r := out["results"].([]any)[0].(map[string]any); code != 200 || r["status"] != "duplicate" {
 		t.Errorf("second upload = %v", out)
 	}
-	req := httptest.NewRequest(http.MethodPost, "/api/imports", strings.NewReader("{}"))
+	req := httptest.NewRequest(http.MethodPost, "http://localhost:8080/api/imports", strings.NewReader("{}"))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	a.h.ServeHTTP(rec, req)
@@ -374,7 +378,8 @@ func TestTransactionsPatchScopes(t *testing.T) {
 	if code := a.do("PATCH", fmt.Sprintf("/api/rules/%d", ruleID), map[string]any{"mode": "sempre"}, nil); code != 422 {
 		t.Errorf("bad rule = %d", code)
 	}
-	req := httptest.NewRequest("DELETE", fmt.Sprintf("/api/rules/%d", ruleID), nil)
+	req := httptest.NewRequest("DELETE", fmt.Sprintf("http://localhost:8080/api/rules/%d", ruleID), nil)
+	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	a.h.ServeHTTP(rec, req)
 	if rec.Code != 204 {

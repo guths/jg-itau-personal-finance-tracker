@@ -53,7 +53,7 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "rota não encontrada")
 	})
-	return logRequests(recoverPanics(mux))
+	return logRequests(recoverPanics(localOnly(mux)))
 }
 
 // statusWriter remembers the status code for the access log.

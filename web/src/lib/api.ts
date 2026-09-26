@@ -62,15 +62,17 @@ export function buildQuery(params: Record<string, QueryValue>): string {
 }
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const method = (init.method ?? "GET").toUpperCase()
+  // A API só aceita escrita com JSON ou multipart (proteção contra outros sites): toda escrita
+  // leva JSON, mesmo sem corpo; o multipart do upload fica por conta do navegador.
+  const sendsJSON = method !== "GET" && method !== "HEAD" && !(init.body instanceof FormData)
   let res: Response
   try {
     res = await fetch(`/api${path}`, {
       ...init,
       headers: {
         Accept: "application/json",
-        ...(init.body && !(init.body instanceof FormData)
-          ? { "Content-Type": "application/json" }
-          : {}),
+        ...(sendsJSON ? { "Content-Type": "application/json" } : {}),
         ...init.headers,
       },
     })

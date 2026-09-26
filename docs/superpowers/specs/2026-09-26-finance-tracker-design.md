@@ -519,6 +519,7 @@ Cada categoria recebe uma cor de uma paleta categórica validada para contraste 
 ## 17. Segurança e privacidade
 
 - API escuta só em `127.0.0.1`; sem login na v1.
+- Contra outros sites abertos no navegador (DNS rebinding, CSRF): a API responde 403 a `Host` que não seja `localhost`/`127.0.0.1`/`[::1]` (qualquer porta); escritas (não-GET) exigem `Content-Type` `application/json` ou `multipart/form-data` (senão 415) e, havendo `Origin`, que seja local (senão 403). O proxy do Vite repassa o `Host` do dev server (`localhost:5173`), que é aceito.
 - `.env`, `samples/`, `data/` e qualquer `*.pdf` (exceto o fixture sintético) ficam fora do git.
 - Para a OpenAI vão apenas descrição, valor, data e categoria/cidade do banco de cada lançamento a categorizar — nunca o PDF, CPF, endereço, número de cartão ou conta.
 - Senhas e chave de API nunca aparecem em logs nem em respostas da API.
