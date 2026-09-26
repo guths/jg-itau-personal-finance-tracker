@@ -1,0 +1,16 @@
+# Dados financeiros reais e segredos — nunca versionar
+.env
+samples/
+data/
+*.pdf
+!backend/internal/pdftext/testdata/*.pdf
+
+# Build / dependências
+backend/bin/
+web/node_modules/
+web/dist/
+
+# SO / editores
+.DS_Store
+.idea/
+.vscode/
