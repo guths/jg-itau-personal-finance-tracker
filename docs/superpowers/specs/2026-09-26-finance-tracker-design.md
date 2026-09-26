@@ -114,7 +114,8 @@ jg-finance-tracker/
 
 ```go
 type DocKind string   // "card_statement" | "bank_statement"
-type TxKind string    // "expense" | "refund" | "bill_payment" | "own_transfer" | "investment" | "income" | "ignored"
+type TxKind string    // "expense" | "refund" | "bill_payment" | "own_transfer" | "investment" | "income" | "ignored" | "reversed"
+                      // só expense e refund contam como gasto; "reversed" = estorno integral (seção 8.4)
 
 type Provider interface {
     ID() string                                             // "itau"
@@ -152,7 +153,7 @@ type UpcomingInstallment struct {
 }
 ```
 
-O `registry` guarda os providers; `Detect` pergunta a cada um. Banco novo = novo pacote que implementa `Provider` e se registra. Helper comum: `provider.NormalizeKey(s)` = maiúsculas, sem acentos (NFD + remoção de marcas), espaços colapsados, trim.
+O `registry` guarda os providers; `Detect` pergunta a cada um. Banco novo = novo pacote que implementa `Provider` e se registra. Helpers comuns: `provider.NormalizeKey(s)` = maiúsculas, sem acentos (NFD + remoção de marcas), espaços colapsados, trim; `provider.MarkReversals(txs)` marca os estornos integrais de um documento (seção 8.4).
 
 ### 7.1 Itaú — detecção
 
@@ -228,10 +229,11 @@ Por arquivo:
 2. `pdftext.Open` com todas as senhas configuradas.
 3. `registry.Detect` → nenhum provider reconhece → `failed` ("formato não reconhecido").
 4. `Parse` (inclui conferência) → erro → `failed`; o PDF é copiado para `data/uploads/failed/<sha>.pdf`.
+   - deu certo → `provider.MarkReversals` sobre as transações do documento (seção 8.4): os estornos integrais já entram com tipo `reversed` e nunca chegam à categorização.
 5. Transação MySQL:
    - `upsert` da conta por (provider, kind, external_id);
    - fatura com (conta, fechamento) já existente → rollback e `duplicate` ("fatura já importada") — o Itaú gera bytes diferentes a cada download;
-   - grava o PDF em `data/uploads/<sha>.pdf` e insere `documents`;
+   - grava o PDF em `data/uploads/<sha>.pdf` e insere `documents` (com `reversals_checked = TRUE`);
    - insere transações com `INSERT IGNORE` pela `dedupe_key` (conta novas vs. já existentes);
    - insere as parcelas projetadas (8.3);
    - commit.
@@ -249,6 +251,19 @@ Falha na categorização (GPT fora do ar etc.) **não** desfaz importações; os
 ### 8.3 Parcelas futuras ("falta pagar")
 
 Para cada item `n/N` da seção "próximas faturas" de uma fatura com mês de referência `M`: gera as parcelas `n … N`, a parcela `n + k` no mês `M + 1 + k`, todas com o valor listado. Grava em `installments` ligadas ao documento. O dashboard usa **somente as projeções da fatura mais recente de cada cartão** (maior fechamento), então importar faturas antigas em qualquer ordem não bagunça nada. Conferido com os dados reais: Infinite → próxima R$ 618,78 e demais R$ 3.916,44, exatamente como impresso.
+
+### 8.4 Estornos integrais (`reversed`)
+
+Compra e estorno que se anulam não são gasto, mas continuam como lançamento (tipo `reversed`, sem categoria nem pergunta). `provider.MarkReversals` roda sobre as transações de **um** documento, só `expense`/`refund`, agrupadas por (data, chave de estorno). Valor positivo = compra, negativo = estorno; tudo em centavos inteiros.
+
+- **Chave de estorno:** a chave da transação; no extrato, `DEV PIX <NOME>`, `PIX QRS <NOME>` e `PIX TRANSF <NOME>` viram `PIX <NOME>`, então a devolução encontra o pagamento (`PIX QRS DAL SOTO SO` ↔ `DEV PIX DAL SOTO SO`).
+- **Regra A:** grupo com ao menos uma compra e um estorno cuja soma é exatamente zero → todo o grupo vira `reversed`. Ex. real (fatura, 22/09, `ALIEXPRESSSAO PAULOBR`): +419,86, −17,42, −402,44.
+- **Regra B:** grupo que não zera → cada estorno, na ordem `seq`, anula a primeira compra restante de mesmo valor absoluto; o resto fica como está. Ex.: compras de 50,00 e 30,00 e estorno de 30,00 → só o par de 30,00 vira `reversed`.
+- Datas diferentes nunca se anulam; documentos diferentes também não. Rodar de novo não muda nada.
+
+**Documentos já importados:** `documents.reversals_checked` diz se o documento já foi avaliado. Na inicialização, a API varre os documentos com `reversals_checked = FALSE` (os importados antes desta regra), aplica `MarkReversals` às linhas `expense`/`refund` gravadas e marca o documento como avaliado — uma vez só, então a varredura é idempotente e nunca desfaz uma mudança manual posterior. Linha que vira `reversed` perde `category_id`, `categorized_by` e `question_id`; pergunta pendente/pulada que fica sem transações é marcada `answered`. Linhas categorizadas por mim (`user`) também são anuladas (compra estornada não é gasto) e cada uma é registrada no log.
+
+`reversed` não é tipo de regra (`kind_override`) nem opção de "Não é gasto"; na tabela de lançamentos dá para voltar uma linha anulada a gasto (vira pergunta, como os outros tipos excluídos).
 
 ## 9. Categorização (`categorize`)
 
@@ -344,6 +359,7 @@ CREATE TABLE documents (
   closing_date DATE NULL, due_date DATE NULL,
   reference_month DATE NULL,
   total_cents BIGINT NULL,
+  reversals_checked BOOLEAN NOT NULL DEFAULT FALSE, -- estornos integrais já avaliados (8.4)
   imported_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   UNIQUE KEY uq_documents_sha (file_sha256),
   UNIQUE KEY uq_documents_card_closing (account_id, closing_date),  -- NULL no extrato não conflita
@@ -397,7 +413,7 @@ CREATE TABLE transactions (
   description VARCHAR(255) NOT NULL,
   merchant_key VARCHAR(191) NOT NULL,
   amount_cents BIGINT NOT NULL,         -- > 0 saída; < 0 entrada/estorno
-  kind ENUM('expense','refund','bill_payment','own_transfer','investment','income','ignored') NOT NULL,
+  kind ENUM('expense','refund','bill_payment','own_transfer','investment','income','ignored','reversed') NOT NULL,
   person_transfer BOOLEAN NOT NULL DEFAULT FALSE,
   category_id BIGINT NULL,              -- sempre subcategoria
   categorized_by ENUM('rule','llm','user') NULL,
@@ -437,7 +453,7 @@ CREATE TABLE installments (
 );
 ```
 
-Migrations com goose, embutidas no binário e aplicadas na inicialização da API. A migration de seed cria a taxonomia (seção 15) e as regras semeadas (9.2).
+Migrations com goose, embutidas no binário e aplicadas na inicialização da API. A migration de seed cria a taxonomia (seção 15) e as regras semeadas (9.2). A migration `00003_reversed` acrescenta `reversed` a `transactions.kind` e `documents.reversals_checked` (8.4).
 
 ## 12. API HTTP (JSON, prefixo `/api`)
 
@@ -469,7 +485,7 @@ Layout com barra lateral: **Dashboard**, **Importar**, **Perguntas** (com contad
 1. **Importar** — área de arrastar/soltar (vários PDFs); durante o envio, estado "importando e categorizando"; depois, um cartão por arquivo: conta, mês, "52 compras · R$ 4.052,86 ✓ conferido" / "já importado" / erro em destaque; botão "Responder N perguntas".
 2. **Perguntas** — um card por vez, progresso "3 de 21": chave (ou descrição), valor total, quantidade, datas, conta, categoria/cidade do banco; até 3 sugestões numeradas + "Outra categoria…" (combobox com busca); campo de texto livre (interpretação com confirmação); campo de apelido; opção "Lembrar nas próximas" (ligada por padrão); "Não é gasto" (transferência pra conta minha / ignorar); "Pular". Atalhos: `1`–`3` escolhe sugestão, `Enter` confirma, `S` pula. Aba **Automáticos** com o que o GPT decidiu, agrupado por chave, com troca de categoria.
 3. **Dashboard** (seletor de mês) — nesta ordem: indicadores (total do mês, comparação com a média dos 3 meses anteriores, custo fixo, falta pagar) com aviso de "sem categoria" quando houver; gasto por categoria (barras horizontais ordenadas, clique abre subcategorias e lançamentos); recorrentes (tabela com status); falta pagar (barras por mês nos próximos 12 meses, empilhadas por cartão, lista de parcelados, faturas a vencer); evolução (barras empilhadas por categoria, 12 meses); onde mais gastei (top 10).
-4. **Lançamentos** — tabela com filtros (mês, conta, categoria, tipo, texto, sem categoria), troca de categoria na linha com escolha de escopo ("só este" / "todos desta chave").
+4. **Lançamentos** — tabela com filtros (mês, conta, categoria, tipo, texto, sem categoria), troca de categoria na linha com escolha de escopo ("só este" / "todos desta chave"). Estornos integrais aparecem com o selo discreto "Estorno anulado" (com explicação ao passar o mouse), linha esmaecida, fora dos totais; o filtro de tipo inclui "Estorno anulado". Dashboards só os excluem.
 5. **Categorias e regras** — criar/renomear/arquivar categorias e subcategorias, cor das categorias; editar regra (subcategoria, tipo, modo, apelido, recorrente) ou apagar.
 
 ## 14. Erros
