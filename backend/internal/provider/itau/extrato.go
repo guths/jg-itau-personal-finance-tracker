@@ -132,6 +132,17 @@ func reconcileExtrato(balances, sums map[time.Time]int64) error {
 	if len(balances) == 0 {
 		return &provider.LayoutError{Msg: "nenhuma linha SALDO DO DIA no extrato"}
 	}
+	// Lines dated after the last balance (e.g. a Saturday PIX printed with Monday's date) are
+	// already included in that last balance: reconcile them against it.
+	last := sortedDates(balances)[len(balances)-1]
+	adjusted := make(map[time.Time]int64, len(sums))
+	for d, v := range sums {
+		if d.After(last) {
+			d = last
+		}
+		adjusted[d] += v
+	}
+	sums = adjusted
 	for d := range sums {
 		if _, ok := balances[d]; !ok {
 			return &provider.LayoutError{Msg: fmt.Sprintf("lançamentos em %s sem linha SALDO DO DIA", d.Format("02/01/2006"))}

@@ -110,3 +110,22 @@ func TestClassifyExtrato(t *testing.T) {
 		}
 	}
 }
+
+// A weekend purchase is printed with the next business day's date, after the last "SALDO DO DIA",
+// but that last balance already includes it (real case: PIX on Saturday 26/09 printed as 28/09).
+func TestParseExtratoTransactionAfterLastBalance(t *testing.T) {
+	lines := append([]string{"06/03/2026 PIX QRS MERCADO X05/03 -29,83"}, extratoFixture...)
+	lines = replaceLine(t, lines, "05/03/2026 SALDO DO DIA 329,83", "05/03/2026 SALDO DO DIA 300,00")
+	st, err := parseExtratoLines(toLines(lines))
+	if err != nil {
+		t.Fatalf("parseExtratoLines: %v", err)
+	}
+	first := st.Transactions[0]
+	if !first.Date.Equal(day(2026, 3, 6)) || first.AmountCents != 2983 || first.Key != "PIX QRS MERCADO X" {
+		t.Errorf("first transaction = %+v", first)
+	}
+
+	wrong := replaceLine(t, lines, "05/03/2026 SALDO DO DIA 300,00", "05/03/2026 SALDO DO DIA 329,83")
+	_, err = parseExtratoLines(toLines(wrong))
+	wantReconciliation(t, err, "saldo do dia 05/03/2026", 30000, 32983)
+}
