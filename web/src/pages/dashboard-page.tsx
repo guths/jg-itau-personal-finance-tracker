@@ -15,7 +15,6 @@ import { MonthSelect } from "@/features/dashboard/month-select"
 import { RecurringCard } from "@/features/dashboard/recurring-card"
 import { TopMerchantsCard } from "@/features/dashboard/top-merchants-card"
 import { UncategorizedAlert } from "@/features/dashboard/uncategorized-alert"
-import { UpcomingCard } from "@/features/dashboard/upcoming-card"
 import { useMonths } from "@/hooks/queries"
 import { api } from "@/lib/api"
 import { formatMonthLong } from "@/lib/format"
@@ -107,7 +106,6 @@ export function DashboardPage() {
             <CategoryBreakdown month={month} items={d.by_category} summary={d.summary} />
           )}
           <RecurringCard items={d.recurring} fixed={d.summary.fixed} />
-          <UpcomingCard upcoming={d.upcoming} />
           <div className="grid gap-6 xl:grid-cols-5">
             <div className="min-w-0 xl:col-span-3">
               <EvolutionCard months={d.evolution} />

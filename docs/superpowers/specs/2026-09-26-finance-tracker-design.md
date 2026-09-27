@@ -4,16 +4,18 @@
 - **Status:** design aprovado em conversa (3 partes); implementação autorizada
 - **Autor do produto:** Jonathan (uso pessoal)
 
+> **Nota (2026-09-26):** o recurso "falta pagar" (faturas em aberto e projeção de parcelas futuras) foi removido a pedido do usuário — as faturas sempre são importadas antes de serem pagas, então essa projeção não agregava valor. As partes deste documento que o descreviam foram removidas ou ajustadas; ficam marcadas onde relevante.
+
 ## 1. Objetivo
 
-Saber **exatamente quanto gasto por categoria, mês a mês**, com foco em **gastos recorrentes** e no que **falta pagar** (parcelas e faturas a vencer).
+Saber **exatamente quanto gasto por categoria, mês a mês**, com foco em **gastos recorrentes**.
 
 Fluxo mensal: faço upload das faturas de cartão e do extrato da conta → o sistema extrai as transações, confere os números contra os totais impressos, categoriza sozinho o que tem certeza e me pergunta num chat, item a item, só o que ficou em dúvida → cada resposta vira uma regra salva, então a mesma coisa não é perguntada de novo → dashboards mostram para onde o dinheiro vai.
 
 Critérios de sucesso:
 1. Todo PDF importado **reconcilia centavo a centavo** com os totais impressos (ou é rejeitado com a diferença explicada).
 2. No segundo mês de uso, a maioria dos lançamentos é categorizada sem pergunta.
-3. O dashboard responde: quanto gastei em cada categoria no mês, quanto é custo fixo, quanto já está comprometido nos próximos meses.
+3. O dashboard responde: quanto gastei em cada categoria no mês, quanto é custo fixo.
 
 ## 2. Decisões tomadas
 
@@ -29,7 +31,7 @@ Critérios de sucesso:
 
 ## 3. Escopo
 
-**Dentro da v1:** provider Itaú (fatura + extrato), upload múltiplo, conferência de totais, deduplicação, categorização (regras → GPT → perguntas), chat de perguntas, regras/apelidos, detecção de recorrentes, projeção de parcelas ("falta pagar"), dashboard, tabela de lançamentos com recategorização, edição de categorias e regras.
+**Dentro da v1:** provider Itaú (fatura + extrato), upload múltiplo, conferência de totais, deduplicação, categorização (regras → GPT → perguntas), chat de perguntas, regras/apelidos, detecção de recorrentes, dashboard, tabela de lançamentos com recategorização, edição de categorias e regras.
 
 **Fora da v1:** outros bancos (a interface já prevê), login/multiusuário, deploy na nuvem, orçamento/metas, receitas e investimentos nos dashboards, dividir um lançamento entre categorias, app mobile, processamento assíncrono de importação.
 
@@ -67,9 +69,9 @@ jg-finance-tracker/
 │       ├── layout/           trechos → linhas por coluna, em ordem de leitura
 │       ├── provider/         interface Provider, tipos Statement/Transaction, registry, helpers (NormalizeKey)
 │       │   └── itau/         Detect + ParseFatura + ParseExtrato + conferências
-│       ├── importer/         pipeline de importação (hash, abrir, detectar, parse, dedupe, gravar, projeções)
+│       ├── importer/         pipeline de importação (hash, abrir, detectar, parse, dedupe, gravar)
 │       ├── categorize/       regras, chamada ao GPT, perguntas, respostas, interpretação de texto livre
-│       ├── insights/         consultas do dashboard: resumo, categorias, recorrentes, falta pagar, evolução, top
+│       ├── insights/         consultas do dashboard: resumo, categorias, recorrentes, evolução, top
 │       ├── llm/              interface JSON-com-schema + implementação OpenAI
 │       ├── store/            MySQL: migrations embutidas (goose), repositórios
 │       └── api/              handlers HTTP/JSON (net/http, padrões de rota do Go 1.22+)
@@ -235,7 +237,6 @@ Por arquivo:
    - fatura com (conta, fechamento) já existente → rollback e `duplicate` ("fatura já importada") — o Itaú gera bytes diferentes a cada download;
    - grava o PDF em `data/uploads/<sha>.pdf` e insere `documents` (com `reversals_checked = TRUE`);
    - insere transações com `INSERT IGNORE` pela `dedupe_key` (conta novas vs. já existentes);
-   - insere as parcelas projetadas (8.3);
    - commit.
 6. Resultado por arquivo: `imported | duplicate | failed`, conta, tipo, mês de referência, contagens (novas/existentes), total, avisos, erro.
 
@@ -248,9 +249,9 @@ Falha na categorização (GPT fora do ar etc.) **não** desfaz importações; os
   - fatura: `card|<account_id>|<fechamento>|<seq>`
   - extrato: `bank|<account_id>|<data>|<descrição>|<valor>|<n>`, onde `n` é a ordem da ocorrência entre transações idênticas (data, descrição, valor) no mesmo documento — extratos com períodos sobrepostos não duplicam, e duas transações idênticas no mesmo dia continuam distintas.
 
-### 8.3 Parcelas futuras ("falta pagar")
+### 8.3 Parcelas futuras (removido)
 
-Para cada item `n/N` da seção "próximas faturas" de uma fatura com mês de referência `M`: gera as parcelas `n … N`, a parcela `n + k` no mês `M + 1 + k`, todas com o valor listado. Grava em `installments` ligadas ao documento. O dashboard usa **somente as projeções da fatura mais recente de cada cartão** (maior fechamento), então importar faturas antigas em qualquer ordem não bagunça nada. Conferido com os dados reais: Infinite → próxima R$ 618,78 e demais R$ 3.916,44, exatamente como impresso.
+_Removido a pedido do usuário (2026-09-26): a projeção de parcelas futuras ("falta pagar") deixou de existir. A leitura da seção "Compras parceladas - próximas faturas" continua no parser só para a conferência do PDF (regra 6 e o aviso da regra 7, seção 7.2) — nada mais é gravado a partir dela._
 
 ### 8.4 Estornos integrais (`reversed`)
 
@@ -322,7 +323,7 @@ Modelo via `OPENAI_MODEL`; timeout de 60 s por chamada.
 - **Automáticos:** lista de transações com `categorized_by = llm`, agrupadas por chave. Corrigir = editar a regra (vira `source = user`) e **reaplicar em todas as transações da chave com `categorized_by` em (`rule`, `llm`)**; correções manuais por transação (`user`) nunca são sobrescritas.
 - **Recategorizar na tabela:** escopo `one` (só a transação, `categorized_by = user`) ou `key` (edita/cria a regra e reaplica como acima).
 
-## 10. Recorrentes e "falta pagar" (`insights`)
+## 10. Recorrentes (`insights`)
 
 **Recorrente no mês M** (por chave, só `expense`):
 - regra `recurring = yes` → sempre; `no` → nunca;
@@ -331,10 +332,7 @@ Modelo via `OPENAI_MODEL`; timeout de 60 s por chamada.
 - Campos: chave, apelido (regra) ou última descrição, caminho da categoria, total em M, média da sequência, variação %, meses seguidos, status.
 - **Custo fixo de M** = Σ totais em M dos recorrentes.
 
-**Falta pagar (visão de hoje):**
-- Faturas a vencer: documentos de fatura com `due_date ≥ hoje` (conta, vencimento, total).
-- Parcelas: projeções da fatura mais recente de cada cartão, somadas por mês e por cartão (próximos 12 meses), e lista por compra: "faltam X de N", valor da parcela, total restante.
-- Indicador = Σ faturas a vencer + Σ parcelas futuras (mostrados também separadamente).
+_"Falta pagar" (faturas a vencer + projeção de parcelas futuras) removido a pedido do usuário (2026-09-26)._
 
 ## 11. Modelo de dados (MySQL 8.4, utf8mb4)
 
@@ -438,23 +436,11 @@ CREATE TABLE transactions (
   FOREIGN KEY (question_id) REFERENCES questions(id)
 );
 
-CREATE TABLE installments (
-  id BIGINT AUTO_INCREMENT PRIMARY KEY,
-  account_id BIGINT NOT NULL,
-  document_id BIGINT NOT NULL,
-  merchant_key VARCHAR(191) NOT NULL,
-  description VARCHAR(255) NOT NULL,
-  purchase_date DATE NULL,
-  due_month DATE NOT NULL,              -- mês de referência em que a parcela vai aparecer
-  installment_n SMALLINT NOT NULL,
-  installment_total SMALLINT NOT NULL,
-  amount_cents BIGINT NOT NULL,
-  FOREIGN KEY (account_id) REFERENCES accounts(id),
-  FOREIGN KEY (document_id) REFERENCES documents(id)
-);
 ```
 
-Migrations com goose, embutidas no binário e aplicadas na inicialização da API. A migration de seed cria a taxonomia (seção 15) e as regras semeadas (9.2). A migration `00003_reversed` acrescenta `reversed` a `transactions.kind` e `documents.reversals_checked` (8.4).
+_Tabela `installments` (projeção de parcelas futuras) removida a pedido do usuário (2026-09-26) — ver migration `00005_drop_installments`._
+
+Migrations com goose, embutidas no binário e aplicadas na inicialização da API. A migration de seed cria a taxonomia (seção 15) e as regras semeadas (9.2). A migration `00003_reversed` acrescenta `reversed` a `transactions.kind` e `documents.reversals_checked` (8.4). A migration `00005_drop_installments` remove a tabela `installments` (falta pagar removido, 2026-09-26).
 
 ## 12. API HTTP (JSON, prefixo `/api`)
 
@@ -473,11 +459,11 @@ Migrations com goose, embutidas no binário e aplicadas na inicialização da AP
 | `PATCH /api/transactions/{id}` | `{category_id?, kind?, scope: "one"\|"key"}` |
 | `GET /api/rules` · `PATCH /api/rules/{id}` · `DELETE /api/rules/{id}` | regras |
 | `GET /api/months` | meses com dados (mais recente primeiro) |
-| `GET /api/dashboard?month=AAAA-MM` | `{summary, by_category, recurring, upcoming, evolution, top_merchants}` |
+| `GET /api/dashboard?month=AAAA-MM` | `{summary, by_category, recurring, evolution, top_merchants}` |
 
 Erros: `{"error": "mensagem em pt-BR"}` com status 400/404/409/422/500. Upload: só `application/pdf`, até 20 MB por arquivo. Timeout de escrita do servidor: 5 min (lotes grandes de dados antigos); `POST /api/imports` e `POST /api/questions/suggest` estendem o prazo para 30 min e vão até o fim mesmo se o cliente desconectar.
 
-`summary` = `{total, prev3_avg, fixed, open_bills, future_installments, uncategorized:{count,total}}`; `prev3_avg` = média dos totais dos meses **com dados** entre M−3 e M−1 (`null` se nenhum). `by_category` = categorias com total e subcategorias. `evolution` = últimos 12 meses por categoria. `top_merchants` = 10 maiores chaves do mês (apelido, total, quantidade, categoria). Todos os valores em centavos; só entram `expense` e `refund`.
+`summary` = `{total, prev3_avg, fixed, uncategorized:{count,total}}`; `prev3_avg` = média dos totais dos meses **com dados** entre M−3 e M−1 (`null` se nenhum). `by_category` = categorias com total e subcategorias. `evolution` = últimos 12 meses por categoria. `top_merchants` = 10 maiores chaves do mês (apelido, total, quantidade, categoria). Todos os valores em centavos; só entram `expense` e `refund`. (`open_bills`, `future_installments` e `upcoming` removidos a pedido do usuário, 2026-09-26.)
 
 ## 13. Web
 
@@ -485,7 +471,7 @@ Layout com barra lateral: **Dashboard**, **Importar**, **Perguntas** (com contad
 
 1. **Importar** — área de arrastar/soltar (vários PDFs); durante o envio, estado "importando e categorizando"; depois, um cartão por arquivo: conta, mês, "52 compras · R$ 4.052,86 ✓ conferido" / "já importado" / erro em destaque; botão "Responder N perguntas".
 2. **Perguntas** — um card por vez, progresso "3 de 21": chave (ou descrição), valor total, quantidade, datas, conta, categoria/cidade do banco; até 3 sugestões numeradas + "Outra categoria…" (combobox com busca); campo de texto livre (interpretação com confirmação); campo de apelido; opção "Lembrar nas próximas" (ligada por padrão); "Não é gasto" (transferência pra conta minha / ignorar); "Pular". Atalhos: `1`–`3` escolhe sugestão, `Enter` confirma, `S` pula. Aba **Automáticos** com o que o GPT decidiu, agrupado por chave, com troca de categoria.
-3. **Dashboard** (seletor de mês) — nesta ordem: indicadores (total do mês, comparação com a média dos 3 meses anteriores, custo fixo, falta pagar) com aviso de "sem categoria" quando houver; gasto por categoria (barras horizontais ordenadas, clique abre subcategorias e lançamentos); recorrentes (tabela com status); falta pagar (barras por mês nos próximos 12 meses, empilhadas por cartão, lista de parcelados, faturas a vencer); evolução (barras empilhadas por categoria, 12 meses); onde mais gastei (top 10).
+3. **Dashboard** (seletor de mês) — nesta ordem: indicadores (total do mês, comparação com a média dos 3 meses anteriores, custo fixo) com aviso de "sem categoria" quando houver; gasto por categoria (barras horizontais ordenadas, clique abre subcategorias e lançamentos); recorrentes (tabela com status); evolução (barras empilhadas por categoria, 12 meses); onde mais gastei (top 10). (Cartão "Falta pagar" e seção de parcelas futuras/faturas a vencer removidos a pedido do usuário, 2026-09-26.)
 4. **Lançamentos** — tabela com filtros (mês, conta, categoria, tipo, texto, sem categoria), troca de categoria na linha com escolha de escopo ("só este" / "todos desta chave"). Estornos integrais aparecem com o selo discreto "Estorno anulado" (com explicação ao passar o mouse), linha esmaecida, fora dos totais; o filtro de tipo inclui "Estorno anulado". Dashboards só os excluem.
 5. **Categorias e regras** — criar/renomear/arquivar categorias e subcategorias, cor das categorias; editar regra (subcategoria, tipo, modo, apelido, recorrente) ou apagar.
 

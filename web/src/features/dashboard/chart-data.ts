@@ -1,5 +1,5 @@
 import { formatMonthShort } from "@/lib/format"
-import type { EvolutionMonth, InstallmentMonth } from "@/lib/types"
+import type { EvolutionMonth } from "@/lib/types"
 
 /** Posição de uma barra horizontal numa trilha que comporta negativos (estornos). */
 export function barGeometry(value: number, min: number, max: number): { left: number; width: number } {
@@ -55,22 +55,6 @@ export function evolutionChart(months: readonly EvolutionMonth[], maxSeries = 7)
       row[key] = (row[key] as number) + c.total
     }
     if (hasUnc) row.unc = m.uncategorized
-    return row
-  })
-  return { series, rows }
-}
-
-/** Parcelas futuras por mês empilhadas por cartão; cores fixas por cartão (ordem do id). */
-export function installmentsChart(months: readonly InstallmentMonth[]): { series: Series[]; rows: ChartRow[] } {
-  const accounts = new Map<number, string>()
-  for (const m of months) for (const a of m.by_account) accounts.set(a.account_id, a.account_name)
-  const series = [...accounts.entries()]
-    .sort((a, b) => a[0] - b[0])
-    .map(([id, name], i) => ({ key: `a${id}`, name, color: `var(--chart-${(i % 5) + 1})` }))
-  const rows = months.map((m) => {
-    const row: ChartRow = { month: m.month, label: formatMonthShort(m.month), total: m.total }
-    for (const s of series) row[s.key] = 0
-    for (const a of m.by_account) row[`a${a.account_id}`] = a.total
     return row
   })
   return { series, rows }

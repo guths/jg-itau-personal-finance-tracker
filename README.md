@@ -2,8 +2,7 @@
 
 Organiza meus gastos a partir das faturas de cartão e dos extratos da conta (Itaú primeiro):
 extrai as transações dos PDFs, confere cada documento centavo a centavo contra os totais
-impressos, categoriza com ajuda de IA e mostra dashboards por categoria, recorrentes e o
-que falta pagar.
+impressos, categoriza com ajuda de IA e mostra dashboards por categoria e recorrentes.
 
 Design: `docs/superpowers/specs/2026-09-26-finance-tracker-design.md`.
 

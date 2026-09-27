@@ -24,11 +24,10 @@ export function KpiCards({ summary: s }: { summary: DashboardSummary }) {
   const up = change !== null && change > 0.05
   const down = change !== null && change < -0.05
   const fixedShare = s.total > 0 ? Math.round((s.fixed / s.total) * 100) : null
-  const toPay = s.open_bills + s.future_installments
   const TrendIcon = up ? ArrowUpRightIcon : down ? ArrowDownRightIcon : MinusIcon
 
   return (
-    <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+    <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
       <Kpi
         title="Total do mês"
         value={<Money cents={s.total} />}
@@ -58,11 +57,6 @@ export function KpiCards({ summary: s }: { summary: DashboardSummary }) {
         title="Custo fixo"
         value={<Money cents={s.fixed} />}
         footer={fixedShare === null ? "Soma dos gastos recorrentes" : `${fixedShare}% do mês em recorrentes`}
-      />
-      <Kpi
-        title="Falta pagar"
-        value={<Money cents={toPay} />}
-        footer={`Faturas ${formatBRL(s.open_bills)} · parcelas ${formatBRL(s.future_installments)}`}
       />
     </div>
   )

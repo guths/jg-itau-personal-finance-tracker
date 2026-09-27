@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import { barGeometry, evolutionChart, installmentsChart } from "@/features/dashboard/chart-data"
+import { barGeometry, evolutionChart } from "@/features/dashboard/chart-data"
 import type { EvolutionMonth } from "@/lib/types"
 
 describe("barGeometry", () => {
@@ -41,19 +41,5 @@ describe("evolutionChart", () => {
   it("sem sobras nem sem-categoria não cria séries extras", () => {
     const { series } = evolutionChart([month("2026-09", [[1, 10]])])
     expect(series.map((s) => s.key)).toEqual(["c1"])
-  })
-})
-
-describe("installmentsChart", () => {
-  it("empilha por cartão com cores fixas pelo id", () => {
-    const { series, rows } = installmentsChart([
-      { month: "2026-10", total: 30, by_account: [{ account_id: 2, account_name: "B", total: 10 }, { account_id: 1, account_name: "A", total: 20 }] },
-      { month: "2026-11", total: 5, by_account: [{ account_id: 2, account_name: "B", total: 5 }] },
-    ])
-    expect(series).toEqual([
-      { key: "a1", name: "A", color: "var(--chart-1)" },
-      { key: "a2", name: "B", color: "var(--chart-2)" },
-    ])
-    expect(rows[1]).toMatchObject({ a1: 0, a2: 5, label: "nov/26" })
   })
 })

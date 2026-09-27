@@ -222,8 +222,6 @@ export interface DashboardSummary {
   total: number
   prev3_avg: number | null
   fixed: number
-  open_bills: number
-  future_installments: number
   uncategorized: { count: number; total: number }
 }
 
@@ -256,47 +254,6 @@ export interface RecurringItem {
   status: RecurringStatus
 }
 
-export interface UpcomingBill {
-  account_id: number
-  account_name: string
-  due_date: ISODate
-  total: number
-}
-
-export interface AccountAmount {
-  account_id: number
-  account_name: string
-  total: number
-}
-
-export interface InstallmentMonth {
-  month: Month
-  total: number
-  by_account: AccountAmount[]
-}
-
-export interface InstallmentPurchase {
-  account_id: number
-  account_name: string
-  key: string
-  description: string
-  purchase_date: ISODate | null
-  installment_amount: number
-  remaining: number
-  installment_total: number
-  remaining_total: number
-  next_month: Month
-}
-
-export interface Upcoming {
-  bills: UpcomingBill[]
-  by_month: InstallmentMonth[]
-  purchases: InstallmentPurchase[]
-  bills_total: number
-  installments_total: number
-  total: number
-}
-
 export interface CategoryAmount {
   id: number
   name: string
@@ -323,7 +280,6 @@ export interface Dashboard {
   summary: DashboardSummary
   by_category: CategoryTotal[]
   recurring: RecurringItem[]
-  upcoming: Upcoming
   evolution: EvolutionMonth[]
   top_merchants: TopMerchant[]
 }
