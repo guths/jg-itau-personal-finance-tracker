@@ -21,7 +21,7 @@ Critérios de sucesso:
 
 | # | Decisão | Escolha |
 |---|---|---|
-| D1 | Mês em que um gasto de cartão conta | **Mês do fechamento da fatura.** Conta corrente: data do lançamento. Parcela conta no mês da fatura em que aparece. |
+| D1 | Mês em que um gasto de cartão conta | **Mês da data da compra** (alterado pelo usuário em 2026-09-26; antes era o mês do fechamento da fatura): a fatura traz compras do mês anterior, mas o filtro de mês mostra só as compras daquele mês. Exceção: parcela 02/NN em diante conta no mês do fechamento da fatura em que é cobrada (a data dela é a da compra original); a parcela 01/NN segue a data da compra. Conta corrente: data do lançamento. |
 | D2 | Autonomia da IA | **Categoriza sozinha quando tem certeza** e pergunta só o incerto. PIX para pessoa sempre pergunta na primeira vez. Automáticos ficam numa lista revisável. |
 | D3 | Extração | **Parser determinístico em Go por banco** (coordenadas do PDF) + **GPT como agente de categorização/perguntas**. O GPT nunca extrai números. |
 | D4 | Escopo financeiro | Só **gastos** (saídas) e estornos. Pagamento de fatura, investimento, rendimento, receita e transferência entre contas próprias ficam fora dos dashboards (mas são guardados). |
@@ -244,7 +244,9 @@ Falha na categorização (GPT fora do ar etc.) **não** desfaz importações; os
 
 ### 8.2 Mês de referência e deduplicação
 
-- Fatura: `reference_month` de todas as transações = 1º dia do mês de `ClosingDate`. Extrato: 1º dia do mês da data da transação.
+- `reference_month` = 1º dia do mês da **data da transação**, na fatura e no extrato (D1, alterado em 2026-09-26). Na fatura, a exceção é a parcela com `installment_n >= 2`, que fica no mês de `ClosingDate` (cobrada nesta fatura; a data impressa é a da compra original). O `Repasse de IOF` tem data = fechamento, então cai naturalmente no mês do fechamento. `documents.reference_month` continua sendo o mês do fechamento (fatura) ou do fim do período (extrato) — é o mês do documento, mostrado no resultado da importação.
+- Consequência aceita: o mês corrente só fica completo quando a fatura seguinte (com as compras feitas depois do fechamento) é importada, e o mês mais antigo importado pode aparecer com poucas compras (as do fim do mês anteriores ao primeiro fechamento) — ele entra na lista de meses e na média dos 3 meses anteriores como qualquer mês com dados.
+- A migration `00006_card_month_by_date` recalcula `reference_month` das linhas de fatura já gravadas com a mesma regra (Down volta ao mês do fechamento a partir de `documents.closing_date`).
 - `dedupe_key` = SHA-256 hex de:
   - fatura: `card|<account_id>|<fechamento>|<seq>`
   - extrato: `bank|<account_id>|<data>|<descrição>|<valor>|<n>`, onde `n` é a ordem da ocorrência entre transações idênticas (data, descrição, valor) no mesmo documento — extratos com períodos sobrepostos não duplicam, e duas transações idênticas no mesmo dia continuam distintas.
@@ -452,7 +454,7 @@ CREATE TABLE transactions (
 
 _Tabela `installments` (projeção de parcelas futuras) removida a pedido do usuário (2026-09-26) — ver migration `00005_drop_installments`._
 
-Migrations com goose, embutidas no binário e aplicadas na inicialização da API. A migration de seed cria a taxonomia (seção 15) e as regras semeadas (9.2). A migration `00003_reversed` acrescenta `reversed` a `transactions.kind` e `documents.reversals_checked` (8.4). A migration `00005_drop_installments` remove a tabela `installments` (falta pagar removido, 2026-09-26).
+Migrations com goose, embutidas no binário e aplicadas na inicialização da API. A migration de seed cria a taxonomia (seção 15) e as regras semeadas (9.2). A migration `00003_reversed` acrescenta `reversed` a `transactions.kind` e `documents.reversals_checked` (8.4). A migration `00005_drop_installments` remove a tabela `installments` (falta pagar removido, 2026-09-26). A migration `00006_card_month_by_date` recalcula o mês de referência das linhas de fatura pela data da compra (D1 alterado, 2026-09-26; 8.2).
 
 ## 12. API HTTP (JSON, prefixo `/api`)
 

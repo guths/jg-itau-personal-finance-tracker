@@ -14,10 +14,13 @@ func monthOf(t time.Time) time.Time {
 	return time.Date(t.Year(), t.Month(), 1, 0, 0, 0, 0, time.UTC)
 }
 
-// referenceMonth is the month a transaction counts in (spec §8.2): the closing month for
-// card statements, the transaction's own month for bank statements.
+// referenceMonth is the month a transaction counts in (spec §8.2, decision D1 as changed on
+// 2026-09-26): the month of the transaction's own date — the purchase date on card statements,
+// even when the invoice brings purchases of the previous month. The exception is an installment
+// 02/NN or later: its date is the original purchase date, but it is charged in this invoice, so
+// it counts in the closing month.
 func referenceMonth(st *provider.Statement, tx provider.Transaction) time.Time {
-	if st.Kind == provider.CardStatement {
+	if st.Kind == provider.CardStatement && tx.InstallmentN >= 2 {
 		return monthOf(st.ClosingDate)
 	}
 	return monthOf(tx.Date)

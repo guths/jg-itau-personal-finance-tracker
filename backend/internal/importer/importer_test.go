@@ -151,8 +151,13 @@ func TestImportCardStatement(t *testing.T) {
 	if r.NewCount != 4 || r.ExistingCount != 0 || r.TotalCents != 15000 || len(r.Warnings) != 1 {
 		t.Errorf("counts = %+v", r)
 	}
-	if n := count(t, e.st, `SELECT COUNT(*) FROM transactions WHERE reference_month = '2026-02-01'`); n != 4 {
-		t.Errorf("transactions in 2026-02 = %d, want 4 (card lines count in the closing month)", n)
+	// Card lines count in the month of their date (D1, changed 2026-09-26); installment 04/10
+	// counts in the invoice's closing month.
+	if n := count(t, e.st, `SELECT COUNT(*) FROM transactions WHERE reference_month = '2026-02-01'`); n != 3 {
+		t.Errorf("transactions in 2026-02 = %d, want 3", n)
+	}
+	if n := count(t, e.st, `SELECT COUNT(*) FROM transactions WHERE reference_month = '2026-01-01' AND seq = 2`); n != 1 {
+		t.Errorf("purchase of 28/01 in a February invoice must count in 2026-01")
 	}
 	var occurred time.Time
 	var city, currency string
@@ -325,6 +330,32 @@ func TestImportKeepsRenamedAccount(t *testing.T) {
 	r := importOne(t, e, "b.pdf", pdf(t, 1))
 	if r.AccountName != "Meu cartão" || count(t, e.st, `SELECT COUNT(*) FROM accounts`) != 1 {
 		t.Errorf("result = %+v", r)
+	}
+}
+
+func TestReferenceMonthUnit(t *testing.T) {
+	card := &provider.Statement{Kind: provider.CardStatement, ClosingDate: d(2026, 9, 24)}
+	bank := &provider.Statement{Kind: provider.BankStatement, PeriodEnd: d(2026, 9, 30)}
+	cases := []struct {
+		name string
+		st   *provider.Statement
+		tx   provider.Transaction
+		want time.Time
+	}{
+		{"purchase in the invoice month", card, provider.Transaction{Date: d(2026, 9, 3)}, d(2026, 9, 1)},
+		{"purchase dated in the previous month", card, provider.Transaction{Date: d(2026, 8, 27)}, d(2026, 8, 1)},
+		{"purchase dated in the previous year", card, provider.Transaction{Date: d(2025, 12, 30)}, d(2025, 12, 1)},
+		{"installment 01/10 counts in the purchase month", card,
+			provider.Transaction{Date: d(2026, 8, 27), InstallmentN: 1, InstallmentTotal: 10}, d(2026, 8, 1)},
+		{"installment 04/10 counts in the closing month", card,
+			provider.Transaction{Date: d(2026, 6, 10), InstallmentN: 4, InstallmentTotal: 10}, d(2026, 9, 1)},
+		{"IOF dated at the closing", card, provider.Transaction{Date: d(2026, 9, 24)}, d(2026, 9, 1)},
+		{"bank line", bank, provider.Transaction{Date: d(2026, 8, 31)}, d(2026, 8, 1)},
+	}
+	for _, c := range cases {
+		if got := referenceMonth(c.st, c.tx); !got.Equal(c.want) {
+			t.Errorf("%s: %s, want %s", c.name, day(got), day(c.want))
+		}
 	}
 }
 
