@@ -52,3 +52,13 @@ func TestLoadReadsDotEnvAndEnvironmentWins(t *testing.T) {
 		t.Errorf("got %+v", got)
 	}
 }
+
+func TestFromEnvironWebDirAndContainer(t *testing.T) {
+	got := FromEnviron([]string{"WEB_DIR=web/dist", "IN_CONTAINER=true"}, "/repo")
+	if got.WebDir != "/repo/web/dist" || !got.InContainer {
+		t.Errorf("got WebDir=%q InContainer=%v", got.WebDir, got.InContainer)
+	}
+	if def := FromEnviron(nil, "/repo"); def.WebDir != "" || def.InContainer {
+		t.Errorf("defaults: WebDir=%q InContainer=%v", def.WebDir, def.InContainer)
+	}
+}

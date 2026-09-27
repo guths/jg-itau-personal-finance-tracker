@@ -1,4 +1,4 @@
-.PHONY: backup-init backup restore backup-schedule backup-unschedule test test-samples inspect db-up db-down api web web-build web-test
+.PHONY: up down logs backup-init backup restore backup-schedule backup-unschedule test test-samples inspect db-up db-down api web web-build web-test
 
 test:
 	cd backend && go test ./...
@@ -10,6 +10,16 @@ test-samples:
 # Ex.: make inspect ARGS="-v ../samples/itau/*.pdf"
 inspect:
 	cd backend && go run ./cmd/inspect $(ARGS)
+
+# App completo em Docker (MySQL + API + site) em http://localhost:8080
+up:
+	docker compose --profile app up -d --build --wait
+
+down:
+	docker compose --profile app down
+
+logs:
+	docker compose --profile app logs -f app
 
 # MySQL 8.4 em 127.0.0.1:3307 (espera ficar saudável)
 db-up:

@@ -1,4 +1,6 @@
-# MySQL local do finance tracker. A porta 3306 da máquina já está ocupada, então usamos 3307.
+# MySQL local do finance tracker (exposto em 127.0.0.1:3307 porque a 3306 costuma estar ocupada)
+# e o app completo (API + site) no profile "app":
+#   docker compose --profile app up -d --build   → http://localhost:8080
 services:
   mysql:
     image: mysql:8.4
@@ -23,5 +25,28 @@ services:
       retries: 30
       start_period: 20s
 
+  app:
+    profiles: ["app"]
+    build: .
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      # sobrescreve o .env: dentro do Docker o MySQL é o serviço "mysql"
+      MYSQL_DSN: finance:finance@tcp(mysql:3306)/finance?parseTime=true&loc=UTC
+      HTTP_ADDR: 0.0.0.0:8080
+      DATA_DIR: /data
+      WEB_DIR: /app/web
+      IN_CONTAINER: "true"
+    ports:
+      - "127.0.0.1:8080:8080" # só este computador acessa (o app não tem login)
+    volumes:
+      - app-data:/data # PDFs importados
+
 volumes:
   mysql-data:
+  app-data:

@@ -1,0 +1,13 @@
+# Nunca levar segredos, PDFs reais ou dados para dentro da imagem
+.env
+samples/
+data/
+**/*.pdf
+!backend/internal/pdftext/testdata/*.pdf
+.git
+.superpowers
+.claude
+docs
+web/node_modules
+web/dist
+backend/bin

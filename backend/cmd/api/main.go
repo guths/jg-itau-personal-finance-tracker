@@ -35,8 +35,10 @@ func main() {
 
 func run() error {
 	cfg := config.Load("../.env", ".env")
-	if err := checkLoopback(cfg.HTTPAddr); err != nil {
-		return err
+	if !cfg.InContainer { // in Docker the port is published only on the host's 127.0.0.1
+		if err := checkLoopback(cfg.HTTPAddr); err != nil {
+			return err
+		}
 	}
 	st, err := store.Open(cfg.MySQLDSN)
 	if err != nil {
@@ -53,7 +55,7 @@ func run() error {
 	cat := categorize.New(st, client)
 	im := importer.New(st, provider.NewRegistry(itau.New()), cfg.PDFPasswords, cfg.DataDir, cat)
 	sweepReversals(im)
-	handler := api.New(st, im, cat, insights.New(st))
+	handler := api.WithWeb(api.New(st, im, cat, insights.New(st)), cfg.WebDir)
 
 	srv := &http.Server{
 		Addr:              cfg.HTTPAddr,

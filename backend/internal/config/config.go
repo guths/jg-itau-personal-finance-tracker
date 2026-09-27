@@ -21,6 +21,8 @@ type Config struct {
 	DataDir      string
 	SamplesDir   string
 	BaseDir      string // directory relative paths are resolved from
+	WebDir       string // built web app (web/dist) served by the API; empty = API only
+	InContainer  bool   // running inside Docker: listen on all interfaces of the container
 }
 
 // Load reads the given .env files that exist (earlier files win; the first one found sets
@@ -96,6 +98,8 @@ func FromEnviron(environ []string, baseDir string) Config {
 		DataDir:      resolve(get("DATA_DIR", "data")),
 		SamplesDir:   resolve(env["SAMPLES_DIR"]),
 		BaseDir:      baseDir,
+		WebDir:       resolve(env["WEB_DIR"]),
+		InContainer:  env["IN_CONTAINER"] == "true",
 	}
 	for _, k := range pwKeys {
 		c.PDFPasswords = append(c.PDFPasswords, env[k])
