@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { SearchIcon, SparklesIcon } from "lucide-react"
+import { EyeOffIcon, SearchIcon, SparklesIcon } from "lucide-react"
 import { useMemo, useState } from "react"
 import { toast } from "sonner"
 
@@ -7,6 +7,18 @@ import { CategoryPicker, ColorDot } from "@/components/category-picker"
 import { EmptyState } from "@/components/empty-state"
 import { Money } from "@/components/money"
 import { QueryError } from "@/components/query-error"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog"
+import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Spinner } from "@/components/ui/spinner"
@@ -37,6 +49,18 @@ export function AutoReview() {
       void invalidateSpending(qc)
     },
   })
+
+  const ignore = useMutation({
+    mutationFn: ({ anchorId }: { anchorId: number; key: string }) =>
+      api.updateTransaction(anchorId, { kind: "ignored", scope: "key" }),
+    onSuccess: (_r, v) => {
+      toast.success(`${v.key} ignorado`, {
+        description: "Não conta mais nos gastos; as próximas cobranças também serão ignoradas.",
+      })
+      void invalidateSpending(qc)
+    },
+  })
+  const busy = change.isPending || ignore.isPending
 
   if (isPending) {
     return (
@@ -72,7 +96,9 @@ export function AutoReview() {
       </div>
       <ul className="divide-y rounded-xl border">
         {visible.map((g) => {
-          const saving = change.isPending && change.variables.anchorId === g.anchorId
+          const saving =
+            (change.isPending && change.variables.anchorId === g.anchorId) ||
+            (ignore.isPending && ignore.variables.anchorId === g.anchorId)
           return (
             <li key={g.key} className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center">
               <div className="min-w-0 flex-1">
@@ -81,11 +107,11 @@ export function AutoReview() {
                   {g.sample} · {plural(g.count, "lançamento", "lançamentos")} · <Money cents={g.totalCents} />
                 </p>
               </div>
-              <div className="flex items-center gap-2 sm:w-72">
+              <div className="flex items-center gap-2 sm:w-80">
                 {saving && <Spinner />}
                 <CategoryPicker
                   value={g.categoryId}
-                  disabled={change.isPending}
+                  disabled={busy}
                   className="w-full"
                   align="end"
                   onSelect={(o) => {
@@ -98,6 +124,29 @@ export function AutoReview() {
                     <span className="truncate">{g.categoryPath ?? "Sem categoria"}</span>
                   </span>
                 </CategoryPicker>
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button variant="ghost" size="icon" aria-label={`Ignorar ${g.key}`} title="Ignorar (não conta nos gastos)" disabled={busy}>
+                      <EyeOffIcon />
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Ignorar esta chave?</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        Os lançamentos de <span className="font-mono">{g.key}</span> deixam de contar nos gastos e nos
+                        dashboards (continuam em Lançamentos com o selo “Ignorado”), e as próximas cobranças já entram
+                        ignoradas. Dá para desfazer em Lançamentos com “Voltar a contar”.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                      <AlertDialogAction onClick={() => ignore.mutate({ anchorId: g.anchorId, key: g.key })}>
+                        Ignorar
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
               </div>
             </li>
           )

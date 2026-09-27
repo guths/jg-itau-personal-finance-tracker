@@ -13,6 +13,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { FilterBar } from "@/features/transactions/filter-bar"
 import { readFilters, toApiFilters, writeFilters, type FilterState } from "@/features/transactions/filters"
 import { RecategorizeDialog, type PendingChange } from "@/features/transactions/recategorize-dialog"
+import { isSpendingKind } from "@/features/transactions/spending"
 import { TransactionsTable } from "@/features/transactions/transactions-table"
 import { useMonths } from "@/hooks/queries"
 import { api } from "@/lib/api"
@@ -20,6 +21,19 @@ import { plural, sumCents } from "@/lib/format"
 import { invalidateSpending, qk } from "@/lib/query"
 
 const PAGE = 100
+
+function successMessage(change: PendingChange, scope: "one" | "key"): [string, { description?: string }] {
+  if (change.type === "kind" && change.kind === "ignored")
+    return scope === "key"
+      ? ["Chave ignorada", { description: `As próximas cobranças de ${change.tx.key} também serão ignoradas.` }]
+      : ["Gasto ignorado", { description: "Não entra mais nos gastos nem nos dashboards." }]
+  if (change.type === "kind" && isSpendingKind(change.kind))
+    return [
+      scope === "key" ? "A chave voltou a contar" : "Voltou a contar",
+      { description: "Responda em Perguntas para escolher a categoria." },
+    ]
+  return [scope === "key" ? "Regra salva e aplicada à chave" : "Lançamento atualizado", {}]
+}
 
 export function TransactionsPage() {
   const qc = useQueryClient()
@@ -45,8 +59,8 @@ export function TransactionsPage() {
         change.tx.id,
         change.type === "category" ? { category_id: change.categoryId, scope } : { kind: change.kind, scope },
       ),
-    onSuccess: (_r, { scope }) => {
-      toast.success(scope === "key" ? "Regra salva e aplicada à chave" : "Lançamento atualizado")
+    onSuccess: (_r, { change, scope }) => {
+      toast.success(...successMessage(change, scope))
       setPending(null)
       void invalidateSpending(qc)
     },
@@ -109,7 +123,7 @@ export function TransactionsPage() {
 
   return (
     <div className="space-y-4">
-      <PageHeader title="Lançamentos" description="Tudo que foi importado. Troque a categoria direto na linha." />
+      <PageHeader title="Lançamentos" description="Tudo que foi importado. Troque a categoria direto na linha ou ignore o que não é gasto seu." />
       <FilterBar state={state} months={months.data ?? []} onChange={patch} onClear={clear} searchKey={searchKey} />
       {body}
       <RecategorizeDialog

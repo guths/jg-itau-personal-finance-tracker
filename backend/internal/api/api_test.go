@@ -307,6 +307,7 @@ type txResp struct {
 	CategoryID    *int64  `json:"category_id"`
 	CategoryPath  *string `json:"category_path"`
 	CategorizedBy *string `json:"categorized_by"`
+	QuestionID    *int64  `json:"question_id"`
 	Date          string  `json:"date"`
 }
 
@@ -506,5 +507,56 @@ func TestTransactionsReversedKind(t *testing.T) {
 	}
 	if code := a.do("PATCH", fmt.Sprintf("/api/transactions/%d", all[1].ID), map[string]any{"kind": "reversed", "scope": "one"}, nil); code != 422 {
 		t.Errorf("setting reversed by hand = %d, want 422", code)
+	}
+}
+
+// "Ignorar" (scope key) takes the key out of the dashboard and keeps its rows listed with kind
+// ignored; "voltar a contar" (kind expense, scope key) brings them back to the question queue.
+func TestIgnoreAndRestoreByKey(t *testing.T) {
+	a := newAPI(t)
+	a.importFixture()
+	var bakery []txResp
+	a.do("GET", "/api/transactions?q=padaria", nil, &bakery)
+	if len(bakery) != 2 {
+		t.Fatalf("search = %+v", bakery)
+	}
+	path := fmt.Sprintf("/api/transactions/%d", bakery[0].ID)
+	if code := a.do("PATCH", path, map[string]any{"kind": "ignored", "scope": "key"}, nil); code != 200 {
+		t.Fatalf("ignore key = %d", code)
+	}
+	var ignored []txResp
+	if a.do("GET", "/api/transactions?kind=ignored", nil, &ignored); len(ignored) != 2 {
+		t.Errorf("kind=ignored = %+v", ignored)
+	}
+	total := func() float64 {
+		var dash map[string]any
+		a.do("GET", "/api/dashboard?month=2026-09", nil, &dash)
+		return dash["summary"].(map[string]any)["total"].(float64)
+	}
+	if got := total(); got != 3000 {
+		t.Errorf("dashboard total with bakery ignored = %v, want 3000", got)
+	}
+	if code := a.do("PATCH", path, map[string]any{"kind": "expense", "scope": "key"}, nil); code != 200 {
+		t.Fatalf("restore key = %d", code)
+	}
+	var back []txResp
+	a.do("GET", "/api/transactions?q=padaria", nil, &back)
+	for _, tx := range back {
+		if tx.Kind != "expense" || tx.QuestionID == nil {
+			t.Errorf("restored = %+v", tx)
+		}
+	}
+	if got := total(); got != 5250 {
+		t.Errorf("dashboard total after restore = %v, want 5250", got)
+	}
+	var rules []map[string]any
+	a.do("GET", "/api/rules", nil, &rules)
+	for _, r := range rules {
+		if r["key"] == "PADARIA BOA" {
+			t.Errorf("ignore rule kept: %v", r)
+		}
+	}
+	if code := a.do("PATCH", path, map[string]any{"kind": "expense", "scope": "key"}, nil); code != 422 {
+		t.Errorf("restore a counting row by key = %d, want 422", code)
 	}
 }

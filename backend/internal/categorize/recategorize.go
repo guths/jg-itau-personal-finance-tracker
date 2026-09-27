@@ -15,17 +15,21 @@ var userKinds = map[string]bool{
 
 // SetTransactionCategory recategorizes a transaction from the transactions table (spec §9.4).
 // scope "one" changes only this transaction (categorized_by = user) and takes it out of an open
-// question; scope "key" saves the choice as the key's rule (keeping the mode of an existing rule)
-// and reapplies it to the key's transactions categorized by rule/llm and to those waiting in the
-// key's open questions, which become answered (manual corrections are never overwritten).
+// question; scope "key" saves the choice as the key's rule (keeping the mode of an existing rule;
+// "ignored" always forces mode "always", so future charges are ignored at import) and reapplies
+// it to the key's transactions categorized by rule/llm and to those waiting in the key's open
+// questions, which become answered (manual corrections are never overwritten).
+// Back to spending without a category ("expense"/"refund") with scope "key" is "voltar a contar"
+// (spec §9.5): see restoreKey.
 func (c *Categorizer) SetTransactionCategory(ctx context.Context, txID int64, categoryID *int64, kind, scope string) error {
 	if scope != "one" && scope != "key" {
 		return ErrInvalidScope
 	}
 	return c.inTx(ctx, func(tx *sql.Tx) error {
-		var key string
+		var key, current string
 		var amount int64
-		err := tx.QueryRowContext(ctx, `SELECT merchant_key, amount_cents FROM transactions WHERE id = ? FOR UPDATE`, txID).Scan(&key, &amount)
+		err := tx.QueryRowContext(ctx, `SELECT merchant_key, amount_cents, kind FROM transactions WHERE id = ? FOR UPDATE`, txID).
+			Scan(&key, &amount, &current)
 		if errors.Is(err, sql.ErrNoRows) {
 			return ErrNotFound
 		}
@@ -38,6 +42,9 @@ func (c *Categorizer) SetTransactionCategory(ctx context.Context, txID int64, ca
 		}
 		if scope == "one" {
 			return c.setOne(ctx, tx, tax, txID, key, amount, categoryID, kind)
+		}
+		if categoryID == nil && (kind == "expense" || kind == "refund") {
+			return c.restoreKey(ctx, tx, txID, key, current)
 		}
 		ruleKind := kind
 		if categoryID != nil && (kind == "expense" || kind == "refund") {
@@ -52,6 +59,9 @@ func (c *Categorizer) SetTransactionCategory(ctx context.Context, txID int64, ca
 		if err != nil && !errors.Is(err, sql.ErrNoRows) {
 			return err
 		}
+		if d.kindOverride == "ignored" {
+			mode = "always" // "ignorar todos desta chave" must ignore future charges without asking
+		}
 		if err := upsertUserRule(ctx, tx, key, d, mode, ""); err != nil {
 			return err
 		}
@@ -63,6 +73,46 @@ func (c *Categorizer) SetTransactionCategory(ctx context.Context, txID int64, ca
 		}
 		return c.resolveOpenQuestions(ctx, tx, key, 0, d)
 	})
+}
+
+// restoreKey makes an excluded key count again ("voltar a contar", spec §9.5). The clicked
+// transaction must be own_transfer or ignored. The key's rule is removed when its override is
+// that kind (future charges go through categorization again), and the clicked transaction plus
+// every transaction of the key the rule had excluded (same kind, categorized by rule/llm) become
+// spending without category (the sign decides expense/refund) waiting in the key's grouped
+// question. Manual per-transaction exclusions (categorized_by = user) are kept.
+func (c *Categorizer) restoreKey(ctx context.Context, tx *sql.Tx, txID int64, key, kind string) error {
+	if kind != "own_transfer" && kind != "ignored" {
+		return ErrRestoreScope
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM rules WHERE merchant_key = ? AND kind_override = ?`, key, kind); err != nil {
+		return err
+	}
+	rows, err := tx.QueryContext(ctx, `SELECT id, amount_cents FROM transactions WHERE merchant_key = ? AND kind = ?
+		AND (id = ? OR categorized_by IN ('rule', 'llm')) ORDER BY occurred_on, id`, key, kind, txID)
+	if err != nil {
+		return err
+	}
+	type row struct{ id, amount int64 }
+	var restore []row
+	for rows.Next() {
+		var r row
+		if err := rows.Scan(&r.id, &r.amount); err != nil {
+			rows.Close()
+			return err
+		}
+		restore = append(restore, r)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for _, r := range restore {
+		if err := c.backToQuestions(ctx, tx, r.id, key, spendingKind(r.amount)); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // spendingKind is expense or refund, by the sign of the amount.

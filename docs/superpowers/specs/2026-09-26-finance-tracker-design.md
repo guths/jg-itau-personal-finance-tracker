@@ -323,6 +323,18 @@ Modelo via `OPENAI_MODEL`; timeout de 60 s por chamada.
 - **Automáticos:** lista de transações com `categorized_by = llm`, agrupadas por chave. Corrigir = editar a regra (vira `source = user`) e **reaplicar em todas as transações da chave com `categorized_by` em (`rule`, `llm`)**; correções manuais por transação (`user`) nunca são sobrescritas.
 - **Recategorizar na tabela:** escopo `one` (só a transação, `categorized_by = user`) ou `key` (edita/cria a regra e reaplica como acima).
 
+### 9.5 Ignorar gasto e voltar a contar
+
+Pedido do usuário (2026-09-26): gasto que não é meu (ex.: a assinatura `ANTHROPIC* CLAUDE SUBAN`, paga pela empresa) precisa sair das contas com um clique. Tipo `ignored` — guardado, fora dos dashboards (D4).
+
+- **Ignorar** = `PATCH /api/transactions/{id}` com `{kind: "ignored", scope}`:
+  - `one` → só a transação (`categorized_by = user`), fora da pergunta aberta.
+  - `key` → regra da chave com `kind_override = 'ignored'` e **modo `always` forçado** (mesmo se a regra estava em `ask`), para as próximas cobranças da chave entrarem ignoradas na importação (9.2); reaplica nas transações da chave por `rule`/`llm` e resolve as perguntas abertas da chave. Alias e `recurring` da regra são mantidos; correções manuais não mudam.
+- **Voltar a contar** = `{kind: "expense"|"refund", scope}` sem `category_id` (o sinal do valor decide gasto/estorno):
+  - `one` → a transação volta a gasto sem categoria e entra na pergunta agrupada aberta da chave (ou numa nova) — nunca fica órfã.
+  - `key` → só para transação `ignored`/`own_transfer` (senão 422). Apaga a regra da chave cujo `kind_override` é esse tipo (as próximas cobranças voltam à categorização normal; o apelido da regra se perde) e leva a transação clicada e as da chave excluídas por `rule`/`llm` com esse tipo de volta a gasto sem categoria, todas numa pergunta agrupada. Exclusões manuais (`user`) continuam. Regra com outro override (ex.: `own_transfer` ao restaurar um `ignored`) fica.
+- Dashboards e insights só somam `expense`/`refund`, então `ignored` nunca entra em total, média, custo fixo, recorrentes, evolução ou top 10.
+
 ## 10. Recorrentes (`insights`)
 
 **Recorrente no mês M** (por chave, só `expense`):
@@ -456,7 +468,7 @@ Migrations com goose, embutidas no binário e aplicadas na inicialização da AP
 | `POST /api/questions/{id}/interpret` | `{text}` → interpretação para confirmar |
 | `POST /api/questions/suggest` | refaz sugestões do GPT para perguntas sem sugestão |
 | `GET /api/transactions` | filtros: `month`, `account_id`, `category_id`, `kind`, `q`, `uncategorized`, `categorized_by` |
-| `PATCH /api/transactions/{id}` | `{category_id?, kind?, scope: "one"\|"key"}` |
+| `PATCH /api/transactions/{id}` | `{category_id?, kind?, scope: "one"\|"key"}` — inclui ignorar e voltar a contar (9.5) |
 | `GET /api/rules` · `PATCH /api/rules/{id}` · `DELETE /api/rules/{id}` | regras |
 | `GET /api/months` | meses com dados (mais recente primeiro) |
 | `GET /api/dashboard?month=AAAA-MM` | `{summary, by_category, recurring, evolution, top_merchants}` |
@@ -472,7 +484,7 @@ Layout com barra lateral: **Dashboard**, **Importar**, **Perguntas** (com contad
 1. **Importar** — área de arrastar/soltar (vários PDFs); durante o envio, estado "importando e categorizando"; depois, um cartão por arquivo: conta, mês, "52 compras · R$ 4.052,86 ✓ conferido" / "já importado" / erro em destaque; botão "Responder N perguntas".
 2. **Perguntas** — um card por vez, progresso "3 de 21": chave (ou descrição), valor total, quantidade, datas, conta, categoria/cidade do banco; até 3 sugestões numeradas + "Outra categoria…" (combobox com busca); campo de texto livre (interpretação com confirmação); campo de apelido; opção "Lembrar nas próximas" (ligada por padrão); "Não é gasto" (transferência pra conta minha / ignorar); "Pular". Atalhos: `1`–`3` escolhe sugestão, `Enter` confirma, `S` pula. Aba **Automáticos** com o que o GPT decidiu, agrupado por chave, com troca de categoria.
 3. **Dashboard** (seletor de mês) — nesta ordem: indicadores (total do mês, comparação com a média dos 3 meses anteriores, custo fixo) com aviso de "sem categoria" quando houver; gasto por categoria (barras horizontais ordenadas, clique abre subcategorias e lançamentos); recorrentes (tabela com status); evolução (barras empilhadas por categoria, 12 meses); onde mais gastei (top 10). (Cartão "Falta pagar" e seção de parcelas futuras/faturas a vencer removidos a pedido do usuário, 2026-09-26.)
-4. **Lançamentos** — tabela com filtros (mês, conta, categoria, tipo, texto, sem categoria), troca de categoria na linha com escolha de escopo ("só este" / "todos desta chave"). Estornos integrais aparecem com o selo discreto "Estorno anulado" (com explicação ao passar o mouse), linha esmaecida, fora dos totais; o filtro de tipo inclui "Estorno anulado". Dashboards só os excluem.
+4. **Lançamentos** — tabela com filtros (mês, conta, categoria, tipo, texto, sem categoria), troca de categoria na linha com escolha de escopo ("só este" / "todos desta chave"). Estornos integrais aparecem com o selo discreto "Estorno anulado" (com explicação ao passar o mouse), linha esmaecida, fora dos totais; o filtro de tipo inclui "Estorno anulado". Dashboards só os excluem. Cada linha de gasto tem a ação direta **"Ignorar"** (ícone de olho cortado, com escolha "só este" / "todos desta chave"); linhas ignoradas continuam visíveis com o selo discreto "Ignorado", valor riscado, linha esmaecida e a ação **"Voltar a contar"** (mesma escolha de escopo); o filtro de tipo inclui "Ignorado" (9.5). A aba **Automáticos** também tem "Ignorar" por chave (com confirmação).
 5. **Categorias e regras** — criar/renomear/arquivar categorias e subcategorias, cor das categorias; editar regra (subcategoria, tipo, modo, apelido, recorrente) ou apagar.
 
 ## 14. Erros

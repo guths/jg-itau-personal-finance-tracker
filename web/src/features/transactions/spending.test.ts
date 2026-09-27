@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import { isSpendingKind, spendingKindOf } from "@/features/transactions/spending"
+import { canRestoreKey, isSpendingKind, spendingKindOf } from "@/features/transactions/spending"
 
 describe("voltar a ser gasto", () => {
   it("usa o sinal do valor para escolher gasto ou estorno", () => {
@@ -19,5 +19,15 @@ describe("voltar a ser gasto", () => {
 describe("estorno anulado", () => {
   it("não é gasto", () => {
     expect(isSpendingKind("reversed")).toBe(false)
+  })
+})
+
+describe("voltar a contar a chave toda", () => {
+  it("só vale para lançamentos excluídos por tipo (ignorado ou transferência)", () => {
+    expect(canRestoreKey("ignored")).toBe(true)
+    expect(canRestoreKey("own_transfer")).toBe(true)
+    expect(canRestoreKey("reversed")).toBe(false)
+    expect(canRestoreKey("bill_payment")).toBe(false)
+    expect(canRestoreKey("expense")).toBe(false)
   })
 })

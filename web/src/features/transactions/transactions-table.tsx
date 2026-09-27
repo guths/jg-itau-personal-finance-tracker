@@ -1,4 +1,4 @@
-import { ArrowRightLeftIcon, BanIcon, MoreHorizontalIcon, UndoIcon } from "lucide-react"
+import { ArrowRightLeftIcon, EyeOffIcon, MoreHorizontalIcon, UndoIcon } from "lucide-react"
 
 import { CategoryPicker, ColorDot } from "@/components/category-picker"
 import { Money } from "@/components/money"
@@ -12,18 +12,21 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import type { PendingChange } from "@/features/transactions/recategorize-dialog"
 import { isSpendingKind, spendingKindOf } from "@/features/transactions/spending"
 import { formatDateShort } from "@/lib/format"
 import { CATEGORIZED_BY_LABEL, TX_KIND_HINT, TX_KIND_LABEL, txKindLabel } from "@/lib/labels"
 import type { Transaction } from "@/lib/types"
+import { cn } from "@/lib/utils"
 
 const isSpending = (t: Transaction) => isSpendingKind(t.kind)
 
 function CategoryCell({ t, disabled, onChange }: { t: Transaction; disabled: boolean; onChange: (c: PendingChange) => void }) {
-  if (t.kind === "reversed")
+  if (t.kind === "reversed" || t.kind === "ignored")
     return (
-      <Badge variant="secondary" className="text-muted-foreground" title={TX_KIND_HINT.reversed}>
+      <Badge variant="secondary" className="text-muted-foreground" title={TX_KIND_HINT[t.kind]}>
+        {t.kind === "ignored" && <EyeOffIcon />}
         {txKindLabel(t.kind)}
       </Badge>
     )
@@ -52,6 +55,32 @@ function CategoryCell({ t, disabled, onChange }: { t: Transaction; disabled: boo
   )
 }
 
+/** Ação principal da linha: “Ignorar” um gasto ou “Voltar a contar” um ignorado. */
+function QuickAction({ t, disabled, onChange }: { t: Transaction; disabled: boolean; onChange: (c: PendingChange) => void }) {
+  let label: string
+  let icon
+  let change: PendingChange
+  if (isSpending(t)) {
+    label = "Ignorar (não conta nos gastos)"
+    icon = <EyeOffIcon />
+    change = { tx: t, type: "kind", kind: "ignored" }
+  } else if (t.kind === "ignored") {
+    label = "Voltar a contar"
+    icon = <UndoIcon />
+    change = { tx: t, type: "kind", kind: spendingKindOf(t.amount_cents) }
+  } else return null
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button variant="ghost" size="icon-sm" aria-label={label} disabled={disabled} onClick={() => onChange(change)}>
+          {icon}
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent>{label}</TooltipContent>
+    </Tooltip>
+  )
+}
+
 interface Props {
   rows: Transaction[]
   disabled: boolean
@@ -69,7 +98,9 @@ export function TransactionsTable({ rows, disabled, onChange }: Props) {
             <TableHead className="hidden xl:table-cell">Conta</TableHead>
             <TableHead>Categoria</TableHead>
             <TableHead className="text-right">Valor</TableHead>
-            <TableHead className="w-10 pr-2" />
+            <TableHead className="w-20 pr-2">
+              <span className="sr-only">Ações</span>
+            </TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -100,34 +131,41 @@ export function TransactionsTable({ rows, disabled, onChange }: Props) {
                 <CategoryCell t={t} disabled={disabled} onChange={onChange} />
               </TableCell>
               <TableCell className="text-right">
-                <Money cents={t.amount_cents} signed className="font-medium" />
+                <Money
+                  cents={t.amount_cents}
+                  signed
+                  className={cn("font-medium", t.kind === "ignored" && "line-through decoration-muted-foreground/60")}
+                />
               </TableCell>
               <TableCell className="pr-2">
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" size="icon-sm" aria-label="Mais ações" disabled={disabled}>
-                      <MoreHorizontalIcon />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    <DropdownMenuLabel>Marcar como</DropdownMenuLabel>
-                    {t.kind !== "own_transfer" && (
-                      <DropdownMenuItem onSelect={() => onChange({ tx: t, type: "kind", kind: "own_transfer" })}>
-                        <ArrowRightLeftIcon /> Transferência entre minhas contas
-                      </DropdownMenuItem>
-                    )}
-                    {t.kind !== "ignored" && (
-                      <DropdownMenuItem onSelect={() => onChange({ tx: t, type: "kind", kind: "ignored" })}>
-                        <BanIcon /> Ignorado
-                      </DropdownMenuItem>
-                    )}
-                    {!isSpending(t) && (
-                      <DropdownMenuItem onSelect={() => onChange({ tx: t, type: "kind", kind: spendingKindOf(t.amount_cents) })}>
-                        <UndoIcon /> {TX_KIND_LABEL[spendingKindOf(t.amount_cents)]} (sem categoria)
-                      </DropdownMenuItem>
-                    )}
-                  </DropdownMenuContent>
-                </DropdownMenu>
+                <div className="flex items-center justify-end gap-0.5">
+                  <QuickAction t={t} disabled={disabled} onChange={onChange} />
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="ghost" size="icon-sm" aria-label="Mais ações" disabled={disabled}>
+                        <MoreHorizontalIcon />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuLabel>Marcar como</DropdownMenuLabel>
+                      {t.kind !== "own_transfer" && (
+                        <DropdownMenuItem onSelect={() => onChange({ tx: t, type: "kind", kind: "own_transfer" })}>
+                          <ArrowRightLeftIcon /> Transferência entre minhas contas
+                        </DropdownMenuItem>
+                      )}
+                      {t.kind !== "ignored" && (
+                        <DropdownMenuItem onSelect={() => onChange({ tx: t, type: "kind", kind: "ignored" })}>
+                          <EyeOffIcon /> Ignorado (não conta nos gastos)
+                        </DropdownMenuItem>
+                      )}
+                      {!isSpending(t) && (
+                        <DropdownMenuItem onSelect={() => onChange({ tx: t, type: "kind", kind: spendingKindOf(t.amount_cents) })}>
+                          <UndoIcon /> {TX_KIND_LABEL[spendingKindOf(t.amount_cents)]} (sem categoria)
+                        </DropdownMenuItem>
+                      )}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
               </TableCell>
             </TableRow>
           ))}

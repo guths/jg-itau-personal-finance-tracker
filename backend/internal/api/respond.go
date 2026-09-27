@@ -41,7 +41,7 @@ func writeServiceError(w http.ResponseWriter, r *http.Request, err error, notFou
 	case errors.Is(err, categorize.ErrAlreadyAnswered):
 		writeError(w, http.StatusConflict, err.Error())
 	case errors.Is(err, categorize.ErrInvalidCategory), errors.Is(err, categorize.ErrInvalidKind),
-		errors.Is(err, categorize.ErrInvalidScope), errors.Is(err, categorize.ErrInvalidRule),
+		errors.Is(err, categorize.ErrInvalidScope), errors.Is(err, categorize.ErrRestoreScope), errors.Is(err, categorize.ErrInvalidRule),
 		errors.Is(err, categorize.ErrNoLLM), errors.Is(err, categorize.ErrEmptyText):
 		writeError(w, http.StatusUnprocessableEntity, err.Error())
 	case errors.Is(err, categorize.ErrLLMFailed):

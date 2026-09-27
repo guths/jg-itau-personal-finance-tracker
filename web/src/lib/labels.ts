@@ -14,6 +14,7 @@ export const TX_KIND_LABEL: Record<TxKind, string> = {
 /** Explicação curta dos tipos que precisam dela (tooltip). */
 export const TX_KIND_HINT: Partial<Record<TxKind, string>> = {
   reversed: "Compra e estorno no mesmo dia se anulam: fica como lançamento, mas não entra nos gastos",
+  ignored: "Não entra nos gastos nem nos dashboards (ex.: pago pela empresa). Use “Voltar a contar” para desfazer",
 }
 
 /** Rótulo do tipo; um tipo desconhecido aparece como veio da API. */

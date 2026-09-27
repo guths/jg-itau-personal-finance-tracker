@@ -23,6 +23,7 @@ var (
 	ErrInvalidCategory = errors.New("escolha uma subcategoria ativa")
 	ErrInvalidKind     = errors.New("tipo inválido")
 	ErrInvalidScope    = errors.New("escopo inválido: use \"one\" ou \"key\"")
+	ErrRestoreScope    = errors.New("só lançamento ignorado ou de transferência entre minhas contas volta a contar para a chave toda")
 	ErrNoLLM           = errors.New("IA indisponível: configure OPENAI_API_KEY no .env")
 	ErrInvalidRule     = errors.New("regra inválida")
 	ErrEmptyText       = errors.New("escreva uma resposta para interpretar")

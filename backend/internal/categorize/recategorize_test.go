@@ -273,3 +273,116 @@ func TestSetOneBackToSpendingGoesToQuestionQueue(t *testing.T) {
 		t.Errorf("categorized refund = %+v", s)
 	}
 }
+
+// "Ignorar" for the whole key: the rule always ignores the key (even if it was in mode ask),
+// the key's open questions are resolved and future charges are ignored by the sweep.
+func TestIgnoreScopeKeyIgnoresFutureChargesAndResolvesQuestions(t *testing.T) {
+	f := newFixture(t)
+	c := New(f.s, nil)
+	ctx := context.Background()
+	const key = "ANTHROPIC* CLAUDE SUBAN"
+	software := f.sub("Assinaturas", "Software e IA")
+	f.exec(`INSERT INTO rules (merchant_key, category_id, mode, alias, source) VALUES (?, ?, 'ask', 'Claude', 'user')`, key, software)
+	clicked := f.tx(key, 11000, false)
+	f.exec(`UPDATE transactions SET category_id = ?, categorized_by = 'rule' WHERE id = ?`, software, clicked)
+	waiting := f.tx(key, 11000, false)
+	run(t, c, waiting)
+	qid := f.state(waiting).QuestionID
+	if qid == 0 {
+		t.Fatal("setup: expected a question")
+	}
+
+	if err := c.SetTransactionCategory(ctx, clicked, nil, "ignored", "key"); err != nil {
+		t.Fatal(err)
+	}
+	if r, _ := f.rule(key); r.KindOverride != "ignored" || r.CategoryID != 0 || r.Mode != "always" || r.Alias != "Claude" {
+		t.Errorf("rule = %+v", r)
+	}
+	for _, id := range []int64{clicked, waiting} {
+		if s := f.state(id); s.Kind != "ignored" || s.CategoryID != 0 || s.By != "rule" {
+			t.Errorf("tx %d = %+v", id, s)
+		}
+	}
+	if q := f.question(qid); q.Status != "answered" {
+		t.Errorf("question = %+v", q)
+	}
+	next := f.tx(key, 11000, false)
+	run(t, c, next)
+	if s := f.state(next); s.Kind != "ignored" || s.By != "rule" || s.QuestionID != 0 {
+		t.Errorf("future charge = %+v", s)
+	}
+}
+
+// "Voltar a contar" for the whole key: the ignore rule goes away and every transaction the rule
+// had ignored becomes spending again (sign decides), waiting in one grouped question — no
+// orphans. Manual per-transaction ignores are kept.
+func TestRestoreScopeKeyRemovesIgnoreRule(t *testing.T) {
+	f := newFixture(t)
+	c := New(f.s, nil)
+	ctx := context.Background()
+	const key = "ANTHROPIC* CLAUDE SUBAN"
+	a, b, refund, manual := f.tx(key, 11000, false), f.tx(key, 11000, false), f.tx(key, -11000, false), f.tx(key, 500, false)
+	if err := c.SetTransactionCategory(ctx, manual, nil, "ignored", "one"); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.SetTransactionCategory(ctx, a, nil, "ignored", "key"); err != nil {
+		t.Fatal(err)
+	}
+	run(t, c) // the pending charges of the key are ignored by the new rule
+	for _, id := range []int64{b, refund} {
+		if s := f.state(id); s.Kind != "ignored" || s.By != "rule" {
+			t.Fatalf("setup: tx %d = %+v", id, s)
+		}
+	}
+
+	if err := c.SetTransactionCategory(ctx, b, nil, "expense", "key"); err != nil {
+		t.Fatal(err)
+	}
+	if r, ok := f.rule(key); ok {
+		t.Errorf("ignore rule kept: %+v", r)
+	}
+	qid := f.state(a).QuestionID
+	for id, kind := range map[int64]string{a: "expense", b: "expense", refund: "refund"} {
+		if s := f.state(id); s.Kind != kind || s.CategoryID != 0 || s.By != "" || s.QuestionID == 0 || s.QuestionID != qid {
+			t.Errorf("tx %d = %+v (question %d)", id, s, qid)
+		}
+	}
+	if q := f.question(qid); q.Status != "pending" || q.PerTx || q.TxCount != 3 {
+		t.Errorf("question = %+v", q)
+	}
+	if s := f.state(manual); s.Kind != "ignored" || s.By != "user" {
+		t.Errorf("manual ignore changed: %+v", s)
+	}
+	if n := f.count(`SELECT COUNT(*) FROM transactions WHERE kind IN ('expense', 'refund') AND category_id IS NULL
+		AND categorized_by IS NULL AND question_id IS NULL`); n != 0 {
+		t.Errorf("orphans = %d", n)
+	}
+}
+
+// A rule with a different override (own_transfer) is not removed when restoring an ignored row.
+func TestRestoreScopeKeyKeepsOtherOverride(t *testing.T) {
+	f := newFixture(t)
+	c := New(f.s, nil)
+	ctx := context.Background()
+	f.exec(`INSERT INTO rules (merchant_key, kind_override, source) VALUES ('PIX TRANSF JONATHAN', 'own_transfer', 'user')`)
+	moved, ignored := f.tx("PIX TRANSF JONATHAN", 1000, true), f.tx("PIX TRANSF JONATHAN", 2000, true)
+	f.exec(`UPDATE transactions SET kind = 'own_transfer', categorized_by = 'rule' WHERE id = ?`, moved)
+	f.exec(`UPDATE transactions SET kind = 'ignored', categorized_by = 'user' WHERE id = ?`, ignored)
+	if err := c.SetTransactionCategory(ctx, ignored, nil, "expense", "key"); err != nil {
+		t.Fatal(err)
+	}
+	if r, ok := f.rule("PIX TRANSF JONATHAN"); !ok || r.KindOverride != "own_transfer" {
+		t.Errorf("rule = %+v (exists %v)", r, ok)
+	}
+	if s := f.state(moved); s.Kind != "own_transfer" {
+		t.Errorf("own transfer changed: %+v", s)
+	}
+	if s := f.state(ignored); s.Kind != "expense" || s.QuestionID == 0 {
+		t.Errorf("restored = %+v", s)
+	}
+	rev := f.tx("LOJA", 100, false)
+	f.exec(`UPDATE transactions SET kind = 'reversed' WHERE id = ?`, rev)
+	if err := c.SetTransactionCategory(ctx, rev, nil, "expense", "key"); !errors.Is(err, ErrRestoreScope) {
+		t.Errorf("reversed with scope key: %v", err)
+	}
+}
