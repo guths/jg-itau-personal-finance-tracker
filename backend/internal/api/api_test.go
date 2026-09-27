@@ -73,7 +73,6 @@ func statement() *provider.Statement {
 			{Seq: 2, Date: d(2026, 9, 2), Description: "PADARIA BOA", Key: "PADARIA BOA", AmountCents: 1000, Kind: provider.Expense},
 			{Seq: 3, Date: d(2026, 9, 3), Description: "LOJA X 02/03", Key: "LOJA X", AmountCents: 3000, Kind: provider.Expense, InstallmentN: 2, InstallmentTotal: 3},
 		},
-		Upcoming: []provider.UpcomingInstallment{{Description: "LOJA X 03/03", Key: "LOJA X", AmountCents: 3000, N: 3, Total: 3}},
 	}
 }
 
@@ -401,19 +400,15 @@ func TestDashboardAndMonths(t *testing.T) {
 	if code := a.do("GET", "/api/dashboard?month=2026-09", nil, &dash); code != 200 {
 		t.Fatalf("dashboard = %d", code)
 	}
-	for _, k := range []string{"summary", "by_category", "recurring", "upcoming", "evolution", "top_merchants"} {
+	for _, k := range []string{"summary", "by_category", "recurring", "evolution", "top_merchants"} {
 		if _, ok := dash[k]; !ok {
 			t.Errorf("missing %q", k)
 		}
 	}
 	sum := dash["summary"].(map[string]any)
-	if sum["total"] != 5250.0 || sum["prev3_avg"] != nil || sum["open_bills"] != 5250.0 || sum["future_installments"] != 3000.0 ||
+	if sum["total"] != 5250.0 || sum["prev3_avg"] != nil ||
 		sum["uncategorized"].(map[string]any)["count"] != 3.0 || sum["month"] != "2026-09" {
 		t.Errorf("summary = %v", sum)
-	}
-	up := dash["upcoming"].(map[string]any)
-	if bills := up["bills"].([]any); len(bills) != 1 || bills[0].(map[string]any)["due_date"] != "2026-10-03" {
-		t.Errorf("bills = %v", up["bills"])
 	}
 	if ev := dash["evolution"].([]any); len(ev) != 12 {
 		t.Errorf("evolution = %v", ev)

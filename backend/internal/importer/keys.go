@@ -53,31 +53,3 @@ func dedupeKeys(accountID int64, st *provider.Statement) []string {
 }
 
 func day(t time.Time) string { return t.Format("2006-01-02") }
-
-// projectedInstallment is one future installment row (spec §8.3).
-type projectedInstallment struct {
-	Key, Description string
-	PurchaseDate     time.Time
-	DueMonth         time.Time
-	N, Total         int
-	AmountCents      int64
-}
-
-// projectInstallments expands each upcoming n/N item of an invoice with reference month m into
-// installments n…N, installment n+k falling in month m+1+k, all with the listed amount.
-func projectInstallments(m time.Time, upcoming []provider.UpcomingInstallment) []projectedInstallment {
-	var out []projectedInstallment
-	for _, u := range upcoming {
-		n, total := u.N, u.Total
-		if n < 1 || total < n {
-			n, total = 1, 1
-		}
-		for k := 0; n+k <= total; k++ {
-			out = append(out, projectedInstallment{
-				Key: u.Key, Description: u.Description, PurchaseDate: u.PurchaseDate,
-				DueMonth: m.AddDate(0, 1+k, 0), N: n + k, Total: total, AmountCents: u.AmountCents,
-			})
-		}
-	}
-	return out
-}

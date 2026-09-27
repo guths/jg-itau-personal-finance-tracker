@@ -19,7 +19,7 @@ import (
 )
 
 // tables lists every application table, children first.
-var tables = []string{"installments", "transactions", "questions", "rules", "documents", "accounts", "categories"}
+var tables = []string{"transactions", "questions", "rules", "documents", "accounts", "categories"}
 
 // New connects to MYSQL_TEST_DSN (from the repository .env or the environment), applies the
 // migrations, empties every table and restores the seeded categories and rules. It skips the

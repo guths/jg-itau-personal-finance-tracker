@@ -299,7 +299,7 @@ func TestImportOverlappingStatementReversesStoredPayment(t *testing.T) {
 	if n := count(t, e.st, `SELECT COUNT(*) FROM questions WHERE status = 'pending' AND merchant_key LIKE '%DAL SOTO%'`); n != 0 {
 		t.Errorf("%d DAL SOTO questions still pending", n)
 	}
-	dash, err := insights.New(e.st).Dashboard(context.Background(), d(2026, 9, 1), d(2026, 9, 26))
+	dash, err := insights.New(e.st).Dashboard(context.Background(), d(2026, 9, 1))
 	if err != nil {
 		t.Fatal(err)
 	}

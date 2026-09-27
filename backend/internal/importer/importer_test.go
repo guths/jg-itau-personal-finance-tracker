@@ -99,9 +99,6 @@ func cardStatement() *provider.Statement {
 			{Seq: 3, Date: d(2026, 2, 10), Description: "LOJA X 04/10", Key: "LOJA X", AmountCents: 10000, Kind: provider.Expense, InstallmentN: 4, InstallmentTotal: 10, Holder: "FULANO"},
 			{Seq: 4, Date: d(2026, 2, 11), Description: "AMAZON US", Key: "AMAZON US", AmountCents: 3750, Kind: provider.Expense, OriginalAmountCents: 700, OriginalCurrency: "USD"},
 		},
-		Upcoming: []provider.UpcomingInstallment{
-			{PurchaseDate: d(2025, 11, 10), Description: "LOJA X 05/10", Key: "LOJA X", AmountCents: 10000, N: 5, Total: 10},
-		},
 		Warnings: []string{"aviso de teste"},
 	}
 }
@@ -218,9 +215,6 @@ func TestImportSameInvoiceWithDifferentBytesIsDuplicate(t *testing.T) {
 	if n := count(t, e.st, `SELECT COUNT(*) FROM documents`); n != 1 {
 		t.Errorf("documents = %d", n)
 	}
-	if n := count(t, e.st, `SELECT COUNT(*) FROM installments`); n != 6 {
-		t.Errorf("installments = %d, want 6 (not duplicated)", n)
-	}
 	entries, _ := os.ReadDir(filepath.Join(e.dataDir, "uploads"))
 	if pdfs := countFiles(entries); pdfs != 1 {
 		t.Errorf("stored PDFs = %d, want 1", pdfs)
@@ -304,34 +298,6 @@ func TestImportUnknownAndInvalidFiles(t *testing.T) {
 	}
 }
 
-func TestImportInstallmentProjection(t *testing.T) {
-	st := cardStatement()
-	st.Upcoming = []provider.UpcomingInstallment{{PurchaseDate: d(2025, 11, 10), Description: "LOJA X 04/10", Key: "LOJA X", AmountCents: 2599, N: 4, Total: 10}}
-	e := newEnv(t, st)
-	importOne(t, e, "fatura.pdf", pdf(t, 0))
-
-	rows, err := e.st.DB.Query(`SELECT due_month, installment_n, installment_total, amount_cents FROM installments ORDER BY due_month`)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer rows.Close()
-	var got []string
-	for rows.Next() {
-		var m time.Time
-		var n, total int
-		var amount int64
-		if err := rows.Scan(&m, &n, &total, &amount); err != nil {
-			t.Fatal(err)
-		}
-		got = append(got, fmt.Sprintf("%s %d/%d %d", m.Format("2006-01"), n, total, amount))
-	}
-	want := []string{"2026-03 4/10 2599", "2026-04 5/10 2599", "2026-05 6/10 2599", "2026-06 7/10 2599",
-		"2026-07 8/10 2599", "2026-08 9/10 2599", "2026-09 10/10 2599"}
-	if fmt.Sprint(got) != fmt.Sprint(want) {
-		t.Errorf("installments:\n got %v\nwant %v", got, want)
-	}
-}
-
 func TestImportCategorizationErrorKeepsImport(t *testing.T) {
 	e := newEnv(t, cardStatement())
 	e.cat.err = errors.New("banco fora do ar")
@@ -362,7 +328,7 @@ func TestImportKeepsRenamedAccount(t *testing.T) {
 	}
 }
 
-func TestDedupeKeysAndProjectionUnit(t *testing.T) {
+func TestDedupeKeysUnit(t *testing.T) {
 	st := bankStatement(
 		provider.Transaction{Date: d(2026, 9, 1), Description: "CAFE", AmountCents: 800},
 		provider.Transaction{Date: d(2026, 9, 1), Description: "CAFE", AmountCents: 800},
@@ -376,10 +342,6 @@ func TestDedupeKeysAndProjectionUnit(t *testing.T) {
 	}
 	if other := dedupeKeys(8, st); other[0] == k[0] {
 		t.Error("keys must depend on the account")
-	}
-	p := projectInstallments(d(2026, 12, 1), []provider.UpcomingInstallment{{N: 2, Total: 3, AmountCents: 10}})
-	if len(p) != 2 || !p[0].DueMonth.Equal(d(2027, 1, 1)) || !p[1].DueMonth.Equal(d(2027, 2, 1)) || p[1].N != 3 {
-		t.Errorf("projection = %+v", p)
 	}
 }
 

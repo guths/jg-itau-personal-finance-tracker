@@ -50,9 +50,9 @@ func TestMigrationsAndSeed(t *testing.T) {
 	}
 	var tables int
 	must(t, s.DB.QueryRowContext(ctx, `SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE()
-		AND table_name IN ('accounts','documents','categories','rules','questions','transactions','installments')`).Scan(&tables))
-	if tables != 7 {
-		t.Errorf("tables = %d, want 7", tables)
+		AND table_name IN ('accounts','documents','categories','rules','questions','transactions')`).Scan(&tables))
+	if tables != 6 {
+		t.Errorf("tables = %d, want 6", tables)
 	}
 }
 

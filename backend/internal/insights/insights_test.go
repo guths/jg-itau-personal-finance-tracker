@@ -13,7 +13,6 @@ import (
 type fx struct {
 	t    *testing.T
 	s    *store.Store
-	card int64
 	bank int64
 	doc  int64
 	n    int
@@ -22,7 +21,6 @@ type fx struct {
 func newFx(t *testing.T) *fx {
 	t.Helper()
 	f := &fx{t: t, s: storetest.New(t)}
-	f.card = f.exec(`INSERT INTO accounts (provider, kind, external_id, name) VALUES ('itau', 'credit_card', '8778', 'Platinum')`)
 	f.bank = f.exec(`INSERT INTO accounts (provider, kind, external_id, name) VALUES ('itau', 'checking', '1/2', 'Conta')`)
 	f.doc = f.exec(`INSERT INTO documents (account_id, kind, file_sha256, file_name, stored_path) VALUES (?, 'bank_statement', 'base', 'x.pdf', 'p')`, f.bank)
 	return f
@@ -62,16 +60,14 @@ func (f *fx) sub(cat, sub string) int64 {
 	return id
 }
 
-func (f *fx) dashboard(m time.Time, today time.Time) Dashboard {
+func (f *fx) dashboard(m time.Time) Dashboard {
 	f.t.Helper()
-	d, err := New(f.s).Dashboard(context.Background(), m, today)
+	d, err := New(f.s).Dashboard(context.Background(), m)
 	if err != nil {
 		f.t.Fatal(err)
 	}
 	return d
 }
-
-var today = time.Date(2026, 9, 26, 0, 0, 0, 0, time.UTC)
 
 func TestSummaryAndByCategory(t *testing.T) {
 	f := newFx(t)
@@ -87,7 +83,7 @@ func TestSummaryAndByCategory(t *testing.T) {
 	f.tx(sep, "PIX TRANSF EU", 50000, "own_transfer", 0)
 	f.tx(aug, "MERCADO", 99999, "expense", market) // another month: never mixed in
 
-	d := f.dashboard(sep, today)
+	d := f.dashboard(sep)
 	if d.Summary.Total != 32500 {
 		t.Errorf("total = %d, want 32500", d.Summary.Total)
 	}
@@ -121,13 +117,13 @@ func TestSummaryAndByCategory(t *testing.T) {
 func TestPrev3AvgUsesOnlyMonthsWithData(t *testing.T) {
 	f := newFx(t)
 	f.tx(month(2026, 9), "A", 1000, "expense", 0)
-	if d := f.dashboard(month(2026, 9), today); d.Summary.Prev3Avg != nil {
+	if d := f.dashboard(month(2026, 9)); d.Summary.Prev3Avg != nil {
 		t.Errorf("no previous data: %v", *d.Summary.Prev3Avg)
 	}
 	f.tx(month(2026, 8), "A", 3000, "expense", 0)
 	f.tx(month(2026, 6), "A", 2001, "expense", 0)
 	f.tx(month(2026, 5), "A", 99999, "expense", 0) // outside M-3..M-1
-	d := f.dashboard(month(2026, 9), today)
+	d := f.dashboard(month(2026, 9))
 	if d.Summary.Prev3Avg == nil || *d.Summary.Prev3Avg != 2501 {
 		t.Errorf("prev3_avg = %v, want 2501 (July has no data)", d.Summary.Prev3Avg)
 	}
@@ -157,7 +153,7 @@ func TestRecurring(t *testing.T) {
 	f.exec(`INSERT INTO rules (merchant_key, recurring, source) VALUES ('ALUGUEL', 'no', 'user')`)
 	f.exec(`INSERT INTO rules (merchant_key, category_id, alias, source) VALUES ('NETFLIX', ?, 'Netflix', 'llm')`, stream)
 
-	d := f.dashboard(m, today)
+	d := f.dashboard(m)
 	got := map[string]RecurringItem{}
 	for _, r := range d.Recurring {
 		got[r.Key] = r
@@ -183,57 +179,6 @@ func TestRecurring(t *testing.T) {
 	}
 	if last := d.Recurring[len(d.Recurring)-1]; last.Key != "SPOTIFY" {
 		t.Errorf("absent items go last: %+v", d.Recurring)
-	}
-}
-
-func TestUpcomingUsesOnlyLatestInvoicePerCard(t *testing.T) {
-	f := newFx(t)
-	other := f.exec(`INSERT INTO accounts (provider, kind, external_id, name) VALUES ('itau', 'credit_card', '4229', 'Infinite')`)
-	doc := func(acc int64, sha string, closing, due time.Time, total int64) int64 {
-		return f.exec(`INSERT INTO documents (account_id, kind, file_sha256, file_name, stored_path, closing_date, due_date, reference_month, total_cents)
-			VALUES (?, 'card_statement', ?, 'f.pdf', 'p', ?, ?, ?, ?)`, acc, sha, closing, due, monthOf(closing), total)
-	}
-	inst := func(acc, d int64, desc string, due time.Time, n, total int, amount int64) {
-		f.exec(`INSERT INTO installments (account_id, document_id, merchant_key, description, purchase_date, due_month,
-			installment_n, installment_total, amount_cents) VALUES (?, ?, ?, ?, '2026-05-10', ?, ?, ?, ?)`, acc, d, desc, desc, due, n, total, amount)
-	}
-	// Newest invoice imported first, then an older one: only the newest counts.
-	newest := doc(f.card, "new", time.Date(2026, 9, 24, 0, 0, 0, 0, time.UTC), time.Date(2026, 10, 3, 0, 0, 0, 0, time.UTC), 400000)
-	older := doc(f.card, "old", time.Date(2026, 8, 24, 0, 0, 0, 0, time.UTC), time.Date(2026, 9, 3, 0, 0, 0, 0, time.UTC), 350000)
-	for k := range 3 {
-		inst(f.card, newest, "LOJA X 08/10", month(2026, 10).AddDate(0, k, 0), 8+k, 10, 2500)
-		inst(f.card, older, "LOJA X 07/10", month(2026, 9).AddDate(0, k, 0), 7+k, 10, 2500)
-	}
-	inst(f.card, older, "LOJA X 10/10", month(2026, 12), 10, 10, 2500)
-	infinite := doc(other, "inf", time.Date(2026, 9, 20, 0, 0, 0, 0, time.UTC), time.Date(2026, 9, 26, 0, 0, 0, 0, time.UTC), 100000)
-	inst(other, infinite, "CURSO 02/03", month(2026, 10), 2, 3, 10000)
-	inst(other, infinite, "CURSO 02/03", month(2026, 11), 3, 3, 10000)
-
-	u := f.dashboard(month(2026, 9), today).Upcoming
-	if len(u.Bills) != 2 || u.BillsTotal != 500000 || u.Bills[0].AccountName != "Infinite" {
-		t.Errorf("bills = %+v (due today counts, due 03/09 does not)", u.Bills)
-	}
-	if u.InstallmentsTotal != 3*2500+2*10000 || u.Total != 500000+27500 {
-		t.Errorf("installments total = %d, total = %d", u.InstallmentsTotal, u.Total)
-	}
-	if len(u.ByMonth) != 12 || !u.ByMonth[0].Month.Equal(month(2026, 9)) || u.ByMonth[0].Total != 0 ||
-		u.ByMonth[1].Total != 12500 || len(u.ByMonth[1].ByAccount) != 2 || u.ByMonth[3].Total != 2500 {
-		t.Errorf("by month = %+v", u.ByMonth)
-	}
-	if len(u.Purchases) != 2 {
-		t.Fatalf("purchases = %+v", u.Purchases)
-	}
-	p := u.Purchases[0]
-	if p.Description != "CURSO 02/03" || p.Remaining != 2 || p.InstallmentTotal != 3 || p.RemainingTotal != 20000 ||
-		!p.NextMonth.Equal(month(2026, 10)) || p.PurchaseDate == nil {
-		t.Errorf("purchase = %+v", p)
-	}
-	if q := u.Purchases[1]; q.Remaining != 3 || q.RemainingTotal != 7500 || q.AccountName != "Platinum" {
-		t.Errorf("purchase = %+v", q)
-	}
-	d := f.dashboard(month(2026, 9), today)
-	if d.Summary.OpenBills != 500000 || d.Summary.FutureInstallments != 27500 {
-		t.Errorf("summary = %+v", d.Summary)
 	}
 }
 
@@ -289,7 +234,7 @@ func TestReversalsAreNotSpending(t *testing.T) {
 	f.tx(aug, "NETFLIX", 5590, "expense", 0)
 	f.tx(sep, "NETFLIX", 5590, "reversed", 0) // does not keep the subscription alive in September
 
-	d := f.dashboard(sep, today)
+	d := f.dashboard(sep)
 	if d.Summary.Total != 1000 || d.Summary.Uncategorized != (Uncategorized{Count: 1, Total: 1000}) {
 		t.Errorf("summary = %+v", d.Summary)
 	}

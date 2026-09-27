@@ -75,11 +75,6 @@ func (im *Importer) persist(ctx context.Context, f File, sha, providerID string,
 	if ids, err = insertTransactions(ctx, tx, docID, accountID, st); err != nil {
 		return saved, nil, err
 	}
-	if st.Kind == provider.CardStatement {
-		if err = insertInstallments(ctx, tx, docID, accountID, projectInstallments(documentMonth(st), st.Upcoming)); err != nil {
-			return saved, nil, err
-		}
-	}
 	if err = tx.Commit(); err != nil {
 		return saved, nil, err
 	}
@@ -185,18 +180,6 @@ func storedSpendingByDedupe(ctx context.Context, tx *sql.Tx, dedupeKey string) (
 		return s, false, nil
 	}
 	return s, err == nil, err
-}
-
-func insertInstallments(ctx context.Context, tx *sql.Tx, docID, accountID int64, items []projectedInstallment) error {
-	for _, it := range items {
-		if _, err := tx.ExecContext(ctx, `INSERT INTO installments (account_id, document_id, merchant_key, description,
-			purchase_date, due_month, installment_n, installment_total, amount_cents) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			accountID, docID, clip(it.Key, 191), clip(it.Description, 255), nullDate(it.PurchaseDate),
-			it.DueMonth, it.N, it.Total, it.AmountCents); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 func nullDate(t time.Time) any {

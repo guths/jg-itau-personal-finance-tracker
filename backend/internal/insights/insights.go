@@ -1,6 +1,6 @@
 // Package insights computes the dashboard (spec §10 and §12): monthly totals by category,
-// recurring expenses, what is still to be paid, evolution and top merchants. Only expense and
-// refund transactions count as spending; every amount is in cents.
+// recurring expenses, evolution and top merchants. Only expense and refund transactions count
+// as spending; every amount is in cents.
 package insights
 
 import (
@@ -24,19 +24,16 @@ type Dashboard struct {
 	Summary      Summary
 	ByCategory   []CategoryTotal
 	Recurring    []RecurringItem
-	Upcoming     Upcoming
 	Evolution    []EvolutionMonth
 	TopMerchants []Merchant
 }
 
 // Summary holds the headline numbers of the month.
 type Summary struct {
-	Total              int64
-	Prev3Avg           *int64 // average of the months with data among M-3..M-1; nil if none
-	Fixed              int64  // sum of the month's recurring expenses
-	OpenBills          int64  // invoices due today or later
-	FutureInstallments int64  // projected installments from the current month on
-	Uncategorized      Uncategorized
+	Total         int64
+	Prev3Avg      *int64 // average of the months with data among M-3..M-1; nil if none
+	Fixed         int64  // sum of the month's recurring expenses
+	Uncategorized Uncategorized
 }
 
 // Uncategorized counts the month's spending without category.
@@ -88,8 +85,8 @@ type Merchant struct {
 	CategoryPath string
 }
 
-// Dashboard computes the dashboard of month (any day of it); today anchors "falta pagar".
-func (s *Service) Dashboard(ctx context.Context, month, today time.Time) (Dashboard, error) {
+// Dashboard computes the dashboard of month (any day of it).
+func (s *Service) Dashboard(ctx context.Context, month time.Time) (Dashboard, error) {
 	m := monthOf(month)
 	d := Dashboard{Month: m}
 	cats, err := loadCategories(ctx, s.store.DB)
@@ -119,11 +116,6 @@ func (s *Service) Dashboard(ctx context.Context, month, today time.Time) (Dashbo
 			d.Summary.Fixed += r.Total
 		}
 	}
-	if d.Upcoming, err = s.upcoming(ctx, today); err != nil {
-		return d, err
-	}
-	d.Summary.OpenBills = d.Upcoming.BillsTotal
-	d.Summary.FutureInstallments = d.Upcoming.InstallmentsTotal
 	return d, nil
 }
 
