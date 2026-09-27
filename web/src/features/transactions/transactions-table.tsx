@@ -17,6 +17,7 @@ import type { PendingChange } from "@/features/transactions/recategorize-dialog"
 import { isSpendingKind, spendingKindOf } from "@/features/transactions/spending"
 import { formatDateShort } from "@/lib/format"
 import { CATEGORIZED_BY_LABEL, TX_KIND_HINT, TX_KIND_LABEL, txKindLabel } from "@/lib/labels"
+import { useMoney } from "@/lib/privacy"
 import type { Transaction } from "@/lib/types"
 import { cn } from "@/lib/utils"
 
@@ -88,6 +89,7 @@ interface Props {
 }
 
 export function TransactionsTable({ rows, disabled, onChange }: Props) {
+  const money = useMoney()
   return (
     <div className="rounded-xl border">
       <Table>
@@ -121,7 +123,7 @@ export function TransactionsTable({ rows, disabled, onChange }: Props) {
                   )}
                   {t.original_currency && t.original_amount_cents !== null && (
                     <Badge variant="outline" className="h-4 px-1.5 text-[10px]">
-                      {t.original_currency} {(t.original_amount_cents / 100).toFixed(2)}
+                      {money.foreign(t.original_currency, t.original_amount_cents)}
                     </Badge>
                   )}
                 </div>

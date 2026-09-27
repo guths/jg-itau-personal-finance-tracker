@@ -1,6 +1,7 @@
 import { Outlet } from "react-router"
 
 import { AppSidebar } from "@/components/layout/app-sidebar"
+import { PrivacyToggle } from "@/components/layout/privacy-toggle"
 import { ThemeToggle } from "@/components/layout/theme-toggle"
 import { Separator } from "@/components/ui/separator"
 import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar"
@@ -14,7 +15,8 @@ export function AppLayout() {
           <SidebarTrigger className="-ml-1" aria-label="Abrir menu" />
           <Separator orientation="vertical" className="mr-1 data-[orientation=vertical]:h-4" />
           <span className="text-sm font-medium text-muted-foreground">JG Finanças</span>
-          <div className="ml-auto">
+          <div className="ml-auto flex items-center gap-1">
+            <PrivacyToggle />
             <ThemeToggle />
           </div>
         </header>

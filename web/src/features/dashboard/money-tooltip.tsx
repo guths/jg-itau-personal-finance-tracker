@@ -1,4 +1,5 @@
-import { formatBRL, formatMonth } from "@/lib/format"
+import { formatMonth } from "@/lib/format"
+import { useMoney } from "@/lib/privacy"
 
 interface Entry {
   name?: unknown
@@ -15,6 +16,7 @@ interface Props {
 
 /** Tooltip das barras empilhadas: mês, séries com valor (maior primeiro) e total em BRL. */
 export function MoneyTooltip({ active, payload }: Props) {
+  const money = useMoney()
   if (!active || !payload?.length) return null
   const row = payload[0]?.payload as { month?: string; total?: number } | undefined
   const items = payload
@@ -27,14 +29,14 @@ export function MoneyTooltip({ active, payload }: Props) {
         <div key={String(p.name)} className="flex items-center gap-2">
           <span className="size-2.5 shrink-0 rounded-[2px]" style={{ backgroundColor: p.fill ?? p.color }} />
           <span className="flex-1 truncate text-muted-foreground">{String(p.name)}</span>
-          <span className="font-medium tabular-nums">{formatBRL(p.value as number)}</span>
+          <span className="font-medium tabular-nums">{money.brl(p.value as number)}</span>
         </div>
       ))}
       {items.length === 0 && <p className="text-muted-foreground">Nada neste mês</p>}
       {typeof row?.total === "number" && items.length > 1 && (
         <div className="mt-0.5 flex justify-between border-t pt-1.5 font-medium">
           <span>Total</span>
-          <span className="tabular-nums">{formatBRL(row.total)}</span>
+          <span className="tabular-nums">{money.brl(row.total)}</span>
         </div>
       )}
     </div>

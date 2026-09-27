@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge"
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { formatMonth, plural } from "@/lib/format"
 import { documentKindLabel } from "@/lib/labels"
+import { useMoney } from "@/lib/privacy"
 import type { ImportFileResult } from "@/lib/types"
 import { cn } from "@/lib/utils"
 
@@ -35,6 +36,7 @@ function counts(r: ImportFileResult) {
 }
 
 export function FileResultCard({ result: r }: { result: ImportFileResult }) {
+  const money = useMoney()
   const failed = r.status === "failed"
   const meta = [r.account_name ? documentKindLabel(r.kind) : null, r.reference_month ? formatMonth(r.reference_month) : null]
     .filter(Boolean)
@@ -65,13 +67,13 @@ export function FileResultCard({ result: r }: { result: ImportFileResult }) {
         {r.status === "duplicate" && (
           <p className="text-muted-foreground">Este arquivo (ou esta fatura) já estava no sistema; nada foi alterado.</p>
         )}
-        {failed && <p className="font-medium text-destructive">{r.error || "Falha ao importar"}</p>}
+        {failed && <p className="font-medium text-destructive">{r.error ? money.text(r.error) : "Falha ao importar"}</p>}
         {r.warnings.length > 0 && (
           <ul className="space-y-1">
             {r.warnings.map((w) => (
               <li key={w} className="flex gap-2 text-amber-700 dark:text-amber-400">
                 <TriangleAlertIcon className="mt-0.5 size-4 shrink-0" />
-                <span>{w}</span>
+                <span>{money.text(w)}</span>
               </li>
             ))}
           </ul>

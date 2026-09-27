@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { questionFacts } from "@/features/questions/queue"
 import { formatDayMonth, plural } from "@/lib/format"
+import { useMoney } from "@/lib/privacy"
 import type { Question } from "@/lib/types"
 
 function Fact({ icon, children }: { icon: ReactNode; children: ReactNode }) {
@@ -22,6 +23,7 @@ const VISIBLE = 4
 export function QuestionDetails({ question: q }: { question: Question }) {
   const [expanded, setExpanded] = useState(false)
   const facts = questionFacts(q)
+  const money = useMoney()
   const title = q.alias || q.transactions[0]?.description || q.key
   const txs = expanded ? q.transactions : q.transactions.slice(0, VISIBLE)
   const bank = [...facts.bankCategories].join(", ")
@@ -59,7 +61,7 @@ export function QuestionDetails({ question: q }: { question: Question }) {
       {q.prompt && (
         <div className="flex gap-3 rounded-xl bg-muted/60 p-3 text-sm">
           <BotIcon className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-          <p>{q.prompt}</p>
+          <p>{money.text(q.prompt)}</p>
         </div>
       )}
 

@@ -1,4 +1,4 @@
-import { formatBRL } from "@/lib/format"
+import { useMoney } from "@/lib/privacy"
 import { cn } from "@/lib/utils"
 
 interface Props {
@@ -8,7 +8,9 @@ interface Props {
   signed?: boolean
 }
 
+/** Valor em R$; no modo privacidade vira a máscara (sem dígitos). */
 export function Money({ cents, className, signed }: Props) {
+  const money = useMoney()
   return (
     <span
       className={cn(
@@ -17,7 +19,7 @@ export function Money({ cents, className, signed }: Props) {
         className,
       )}
     >
-      {formatBRL(cents)}
+      {money.brl(cents)}
     </span>
   )
 }

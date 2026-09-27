@@ -3,7 +3,7 @@ import { Bar, BarChart, CartesianGrid, ReferenceLine, XAxis, YAxis } from "recha
 import { ChartContainer, ChartTooltip, type ChartConfig } from "@/components/ui/chart"
 import type { ChartRow, Series } from "@/features/dashboard/chart-data"
 import { MoneyTooltip } from "@/features/dashboard/money-tooltip"
-import { formatBRLCompact } from "@/lib/format"
+import { useMoney } from "@/lib/privacy"
 import { cn } from "@/lib/utils"
 
 interface Props {
@@ -29,6 +29,7 @@ export function ChartLegendList({ series }: { series: Series[] }) {
 /** Barras mensais empilhadas (evolução, parcelas), com eixo e tooltip em BRL. */
 export function StackedMonthChart({ series, rows, className, label }: Props) {
   const config = Object.fromEntries(series.map((s) => [s.key, { label: s.name, color: s.color }])) satisfies ChartConfig
+  const money = useMoney()
   const hasNegative = rows.some((r) => series.some((s) => (r[s.key] as number) < 0))
 
   return (
@@ -41,7 +42,7 @@ export function StackedMonthChart({ series, rows, className, label }: Props) {
             tickLine={false}
             axisLine={false}
             width={72}
-            tickFormatter={(v: number) => formatBRLCompact(v)}
+            tickFormatter={(v: number) => money.compact(v)}
           />
           {hasNegative && <ReferenceLine y={0} stroke="var(--border)" />}
           <ChartTooltip cursor={{ fill: "var(--muted)", opacity: 0.5 }} content={(p) => <MoneyTooltip active={p.active} payload={p.payload} />} />

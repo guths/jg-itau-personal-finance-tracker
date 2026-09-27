@@ -3,7 +3,7 @@ import type { ReactNode } from "react"
 
 import { Money } from "@/components/money"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { formatBRL, formatPercent, pctChange } from "@/lib/format"
+import { formatPercent, pctChange } from "@/lib/format"
 import type { DashboardSummary } from "@/lib/types"
 import { cn } from "@/lib/utils"
 
@@ -51,7 +51,15 @@ export function KpiCards({ summary: s }: { summary: DashboardSummary }) {
             </span>
           )
         }
-        footer={s.prev3_avg === null ? "Sem meses anteriores para comparar" : `Média dos 3 meses anteriores: ${formatBRL(s.prev3_avg)}`}
+        footer={
+          s.prev3_avg === null ? (
+            "Sem meses anteriores para comparar"
+          ) : (
+            <>
+              Média dos 3 meses anteriores: <Money cents={s.prev3_avg} />
+            </>
+          )
+        }
       />
       <Kpi
         title="Custo fixo"
