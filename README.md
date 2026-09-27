@@ -74,3 +74,26 @@ make test           # unitários + integração (os de banco são pulados sem o 
 make test-samples   # regressão com os PDFs reais de samples/
 make web-test       # lint + Vitest do app web
 ```
+
+## Backup (restic → Backblaze B2 ou Cloudflare R2)
+
+O banco local é copiado, **criptografado na sua máquina**, para um bucket na nuvem. O provedor
+nunca vê o conteúdo. Retenção: 7 diários, 8 semanais, 12 mensais e 3 anuais.
+
+1. Crie um bucket **privado** no B2 (ou R2) e uma chave de acesso restrita a ele.
+2. Preencha `RESTIC_PASSWORD`, `RESTIC_REPOSITORY` e as credenciais no `.env` (modelo no `.env.example`).
+   **Guarde a `RESTIC_PASSWORD` num gerenciador de senhas: sem ela o backup não pode ser restaurado.**
+3. Rode uma vez:
+
+```bash
+make backup-init      # cria o repositório
+make backup           # primeiro backup
+make backup-schedule  # backup diário às 21:00 (launchd; log em data/backup.log)
+```
+
+Restaurar (o banco atual é copiado antes para `data/backups/`):
+
+```bash
+make restore                              # último snapshot → banco finance (pede confirmação)
+make restore RESTORE_DB=finance_check     # restaura em outro banco, sem tocar nos dados
+```
